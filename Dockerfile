@@ -51,4 +51,4 @@ USER webdeadend
 ENTRYPOINT ["/entrypoint.sh"]
 
 # Default CMD to run the application
-CMD ["gunicorn", "src.server:app"]
+CMD ["gunicorn"]
