@@ -52,6 +52,9 @@ else:
 request_counter: Counter[str] = Counter()
 request_details: List[Dict[str, Union[str, int]]] = []
 
+def get_logger() -> logging.Logger:
+    return logger
+
 def get_request_body() -> Union[Dict[str, Any], str]:
     """Extract and return the request body based on its content type."""
     content_type = request.headers.get("Content-Type", "").lower().strip()

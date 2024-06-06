@@ -30,10 +30,10 @@ def get_response_data(config: Dict[str, Any], method: str, url: str, path_variab
                 return method_config, path_vars
     return None
 
-def generate_response(body_template: str, data: Dict[str, Any], path_variables: Dict[str, str]) -> str:
+def generate_response(body_template: str, context: Dict[str, Any], path_variables: Dict[str, str]) -> str:
     """Generate the response body using Jinja2 templating."""
     template = Template(body_template)
-    return template.render(request=data, matched=path_variables)
+    return template.render(request=context, matched=path_variables)
 
 def handle_request() -> Response:
     """Handle the incoming request and return the appropriate canned response or 204."""
@@ -46,6 +46,20 @@ def handle_request() -> Response:
     url = request.path
     method = request.method
     path_variables = route_matches_url(url, url)
+    protocol = request.scheme
+    host = request.host
+    port = request.environ.get('SERVER_PORT')
+
+    context = {
+        "protocol": protocol,
+        "host": host,
+        "port": port,
+        "method": method,
+        "path": url,
+        "headers": dict(request.headers),
+        "query_params": request.args.to_dict(),
+        "body": request.data.decode("utf-8")
+    }
 
     response_data = get_response_data(responses_config, method, url, path_variables)
     
@@ -54,7 +68,7 @@ def handle_request() -> Response:
         return Response("", status=204)
 
     method_config, path_variables = response_data
-    body = generate_response(method_config["body"], request, path_variables)
+    body = generate_response(method_config["body"], context, path_variables)
 
     if method_config.get("base64"):
         body = base64.b64decode(body.encode("utf-8"))
