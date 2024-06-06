@@ -49,7 +49,7 @@ jobs:
           exit 1
         fi
 
-        sed -i "s/VERSION = \"__VERSION__\"/VERSION = \"${version}\"/" src/main.py
+        sed -i "s/VERSION = \"__VERSION__\"/VERSION = \"${version}\"/" src/server.py
 
         echo "version=$version" >> $GITHUB_ENV
         
