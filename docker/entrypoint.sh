@@ -11,13 +11,13 @@ echo "Starting Gunicorn on port $PORT"
 
 # Check if the first argument is a flag or a command
 if [ "${1#-}" != "$1" ]; then
-  # Assume user is passing Gunicorn flags, prepend Gunicorn command
-  set -- gunicorn -b 0.0.0.0:${PORT} "$@"
+    # Assume user is passing Gunicorn flags, prepend Gunicorn command
+    set -- gunicorn -b 0.0.0.0:${PORT} src.server:app "$@"
 fi
 
 # If the user passes a command (not starting with `gunicorn`), run that instead.
 if [ "$1" = "gunicorn" ]; then
-  exec gunicorn -b 0.0.0.0:${PORT} "$@"
+    exec gunicorn -b 0.0.0.0:${PORT} src.server:app "$@"
 else
-  exec "$@"
+    exec "$@"
 fi
