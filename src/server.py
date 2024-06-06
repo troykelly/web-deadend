@@ -33,19 +33,28 @@ if gelf_server:
 
     if parsed_url.scheme == "udp":
         gelf_handler = graypy.GELFUDPHandler(gelf_host, gelf_port)
-        logger.info("Setting up UDP GELF handler for %s:%s", gelf_host, gelf_port)
     elif parsed_url.scheme == "tcp":
         gelf_handler = graypy.GELFTCPHandler(gelf_host, gelf_port)
-        logger.info("Setting up TCP GELF handler for %s:%s", gelf_host, gelf_port)
     else:
         raise ValueError(f"Unsupported GELF scheme: {parsed_url.scheme}")
+
+    gelf_logger = logging.getLogger("gelf")
+    gelf_logger.setLevel(logging.INFO)
+    gelf_logger.addHandler(gelf_handler)
+else:
+    gelf_logger = None
+    logger.warning("No GELF server specified; GELF handler not set up")
 
 request_counter: Counter[str] = Counter()
 request_details: List[Dict[str, Union[str, int]]] = []
 
 def get_request_body() -> Union[Dict[str, Any], str]:
     """Extract and return the request body based on its content type."""
-    content_type = request.headers.get("Content-Type", "").lower()
+    content_type = request.headers.get("Content-Type", "").lower().strip()
+    
+    if not content_type:
+        return request.data.decode("utf-8")
+
     try:
         if content_type == "application/json":
             return request.get_json(silent=True) or {}
@@ -68,19 +77,19 @@ def get_request_body() -> Union[Dict[str, Any], str]:
             return data
 
         logger.warning("Unhandled content type: %s", content_type)
-        return request.data.decode("utf-8")
     except Exception as e:
-        logger.error("Error processing request body: %s", e)
+        logger.error("Error processing request body for content type %s: %s", content_type, e)
         return {}
+    
+    return request.data.decode("utf-8")
 
 def send_to_gelf(data: Dict[str, Any]) -> None:
     """Send data to the GELF server if configured."""
-    if gelf_handler:
-        log_record = logging.LogRecord(name="", level=logging.INFO, pathname=__file__,
-                                       lineno=0, msg="Payload Data", args=(), exc_info=None)
-        log_record.extra = data
-        gelf_handler.emit(log_record)
-        logger.info("Sent payload to GELF")
+    if gelf_logger:
+        # Create a message for the log
+        message = f"{data['method']} {data['path']} {data['response_status']} {data['duration_ms']}ms"
+        gelf_logger.info(message, extra=data)
+        logger.debug(f"Sent data to {gelf_host}")
 
 @app.before_request
 def before_request() -> None:
