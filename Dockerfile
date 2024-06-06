@@ -39,8 +39,8 @@ LABEL maintainer="troy@troykelly.com" \
 
 # Health check configuration
 ENV PORT 3000
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD python -c 'import os, requests; exit(1) if requests.get(f"http://localhost:{os.getenv(\"PORT\", 3000)}/deadend-status").status_code != 200 else exit(0)'
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD python -c 'import os, requests; port = os.getenv("PORT", 3000); url = f"http://localhost:{port}/deadend-status"; exit(1) if requests.get(url).status_code != 200 else exit(0)'
 
 # Switch to non-root user
 USER webdeadend
