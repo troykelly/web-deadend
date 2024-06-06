@@ -1,7 +1,7 @@
 #!/usr/bin/env zsh
 
 # Base directories and specific files to include
-INCLUDE_DIRS=("src" ".devcontainer" ".github")
+INCLUDE_DIRS=("src" ".devcontainer" ".github" "docker")
 INCLUDE_FILES=("Dockerfile")
 
 # Output markdown file
