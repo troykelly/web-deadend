@@ -1,13 +1,14 @@
 import os
 import json
 import logging
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from collections import Counter
 from typing import Any, Dict, Union, List
-from urllib.parse import urlparse, parse_qs  # Import parse_qs for form data
+from urllib.parse import urlparse, parse_qs
 
 import xmltodict
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, g
 from flask.logging import create_logger
 import graypy
 
@@ -15,10 +16,18 @@ VERSION = "__VERSION__"  # <-- This will be replaced during the release process
 
 app = Flask(__name__)
 logger = create_logger(app)
-logger.setLevel(logging.DEBUG)
 
-# Setup GELF logging if GELF_SERVER environment variable is set
+# Set logging level from environment variable, default to DEBUG if not set
+debug_level = os.getenv("DEBUG_LEVEL", "INFO").upper()
+if debug_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+    debug_level = "DEBUG"
+logger.setLevel(getattr(logging, debug_level))
+
+# GELF configuration
 gelf_server = os.getenv("GELF_SERVER")
+gelf_handler = None
+
+# Setup GELF handler if GELF_SERVER environment variable is set
 if gelf_server:
     parsed_url = urlparse(gelf_server)
     gelf_host = parsed_url.hostname
@@ -32,8 +41,6 @@ if gelf_server:
         logger.info(f"Setting up TCP GELF handler for {gelf_host}:{gelf_port}")
     else:
         raise ValueError(f"Unsupported GELF scheme: {parsed_url.scheme}")
-
-    logger.addHandler(gelf_handler)
 
 # Counter for requests statistics
 request_counter: Counter[str] = Counter()
@@ -63,6 +70,51 @@ def get_request_body() -> Union[Dict[str, Any], str]:
         logger.warning(f"Unhandled content type: {content_type}")
         return request.data.decode("utf-8")
 
+def send_to_gelf(data: Dict[str, Any]) -> None:
+    """Send data to the GELF server if configured."""
+    if gelf_handler:
+        logger.info("Sending payload to GELF", extra=data)
+        gelf_handler.emit(logging.makeLogRecord({"msg": "Payload Data", "extra": data}))
+
+@app.before_request
+def before_request() -> None:
+    """Store the start time before processing the request."""
+    g.start_time = time.time()
+
+@app.after_request
+def after_request(response: Response) -> Response:
+    """Log ending information and calculate request duration."""
+    request_duration = time.time() - g.start_time
+    request_size = len(request.data)
+    response_size = response.calculate_content_length()
+    
+    request_data: Dict[str, Any] = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "remote_addr": request.remote_addr,
+        "method": request.method,
+        "path": request.path,
+        "headers": dict(request.headers),
+        "body": get_request_body(),
+        "request_size": request_size,
+        "response_status": response.status_code,
+        "response_size": response_size if response_size is not None else 0,
+        "duration_ms": int(request_duration * 1000),  # Convert to milliseconds
+    }
+    
+    # Log the request to STDERR in JSON format
+    logger.debug(json.dumps(request_data))
+    
+    # Update counters and details for statistics
+    request_counter.update([request.path])
+    request_details.append(
+        {"method": request.method, "path": request.path, "domain": request.host}
+    )
+    
+    # Send payload to GELF if configured
+    send_to_gelf(request_data)
+
+    return response
+
 @app.route("/deadend-status", methods=["GET"])
 def deadend_status() -> Response:
     """Endpoint to return service status."""
@@ -91,31 +143,7 @@ def deadend_counter() -> Response:
     methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE"],
 )
 def catch_all(path: str) -> Response:
-    """Catch-all endpoint to log request details."""
-    request_body = get_request_body()
-    request_data: Dict[str, Any] = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "remote_addr": request.remote_addr,
-        "method": request.method,
-        "path": request.path,
-        "headers": dict(request.headers),
-        "body": request_body,
-    }
-
-    # Log the request to STDERR in JSON format
-    logger.debug(json.dumps(request_data))
-
-    # Update counters and details for statistics
-    request_counter.update([request.path])
-    request_details.append(
-        {"method": request.method, "path": request.path, "domain": request.host}
-    )
-
-    # Optionally log to GELF if configured
-    if gelf_server:
-        logger.info("Request logged to GELF", extra=request_data)
-
-    # Return empty response
+    """Catch-all endpoint to handle requests."""
     return "", 204
 
 if __name__ == "__main__":
