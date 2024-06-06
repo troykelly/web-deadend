@@ -37,6 +37,10 @@ LABEL maintainer="troy@troykelly.com" \
     org.opencontainers.image.revision="${VCS_REF}" \
     org.opencontainers.image.created="${BUILD_DATE}"
 
+# Health check configuration
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD curl --fail http://localhost:3000/deadend-status || exit 1
+
 # Switch to non-root user
 USER webdeadend
 
