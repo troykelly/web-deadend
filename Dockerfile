@@ -38,8 +38,9 @@ LABEL maintainer="troy@troykelly.com" \
     org.opencontainers.image.created="${BUILD_DATE}"
 
 # Health check configuration
+ENV PORT 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD curl --fail http://localhost:3000/deadend-status || exit 1
+  CMD python -c 'import os, requests; exit(1) if requests.get(f"http://localhost:{os.getenv(\"PORT\", 3000)}/deadend-status").status_code != 200 else exit(0)'
 
 # Switch to non-root user
 USER webdeadend
