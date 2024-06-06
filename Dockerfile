@@ -41,6 +41,7 @@ LABEL maintainer="troy@troykelly.com" \
     org.opencontainers.image.created="${BUILD_DATE}"
 
 ENV RESPONSES_FILE=/etc/webdeadend/responses.yaml
+ENV PYTHONPATH="/app/src"
 
 # Health check configuration
 ENV PORT 3000
