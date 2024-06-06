@@ -40,4 +40,4 @@ LABEL maintainer="troy@troykelly.com" \
 # Switch to non-root user
 USER webdeadend
 
-CMD ["python", "src/main.py"]
+CMD ["python", "src/server.py"]
