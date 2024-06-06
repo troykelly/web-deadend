@@ -11,6 +11,8 @@ from flask import Flask, request, jsonify, Response
 from flask.logging import create_logger
 import graypy
 
+VERSION = "__VERSION__"  # <-- This will be replaced during the release process
+
 app = Flask(__name__)
 logger = create_logger(app)
 logger.setLevel(logging.DEBUG)
