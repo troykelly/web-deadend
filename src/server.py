@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from collections import Counter
 from typing import Any, Dict, Union, List
 from urllib.parse import urlparse, parse_qs
+import base64
 
 import xmltodict
 from flask import Flask, request, jsonify, Response, g
@@ -65,10 +66,19 @@ def get_request_body() -> Union[Dict[str, Any], str]:
     
     elif content_type == "application/x-www-form-urlencoded":
         return parse_qs(request.data.decode("utf-8"))
-
+    
+    elif content_type.startswith("multipart/form-data"):
+        data = {}
+        for key, value in request.form.items():
+            data[key] = value
+        for key, file in request.files.items():
+            data[key] = base64.b64encode(file.read()).decode('utf-8')
+        return data
+    
     else:
         logger.warning(f"Unhandled content type: {content_type}")
         return request.data.decode("utf-8")
+
 
 def send_to_gelf(data: Dict[str, Any]) -> None:
     """Send data to the GELF server if configured."""
@@ -90,10 +100,12 @@ def after_request(response: Response) -> Response:
     
     request_data: Dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "version": VERSION if VERSION != "__VERSION__" else "dev",
         "remote_addr": request.remote_addr,
         "method": request.method,
         "path": request.path,
         "headers": dict(request.headers),
+        "query_params": request.args.to_dict(),  # Add query parameters here
         "body": get_request_body(),
         "request_size": request_size,
         "response_status": response.status_code,
@@ -107,7 +119,7 @@ def after_request(response: Response) -> Response:
     # Update counters and details for statistics
     request_counter.update([request.path])
     request_details.append(
-        {"method": request.method, "path": request.path, "domain": request.host}
+        {"method": request.method, "path": request.path, "query_params": request.args.to_dict(), "domain": request.host}
     )
     
     # Send payload to GELF if configured
