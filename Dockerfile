@@ -7,10 +7,10 @@ WORKDIR /app
 
 # Install dependencies and create a virtual environment
 COPY requirements.txt .
-RUN apt-get update &&
-    DEBIAN_FRONTEND=noninteractive apt-get install -y wkhtmltopdf &&
-    pip install --no-cache-dir -r requirements.txt &&
-    apt-get clean &&
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y wkhtmltopdf && \
+    pip install --no-cache-dir -r requirements.txt && \
+    apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
 # Copy application code and default configuration with proper ownership
