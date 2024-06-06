@@ -15,6 +15,7 @@ RUN apt-get update && \
 
 # Copy application code and default configuration with proper ownership
 COPY --chown=webdeadend:webdeadend src /app/src
+COPY --chown=webdeadend:webdeadend responses.yaml /etc/webdeadend/responses.yaml
 COPY docker/entrypoint.sh /entrypoint.sh
 
 # Ensure the working directory has correct ownership
@@ -38,6 +39,8 @@ LABEL maintainer="troy@troykelly.com" \
     org.opencontainers.image.version="${VERSION}" \
     org.opencontainers.image.revision="${VCS_REF}" \
     org.opencontainers.image.created="${BUILD_DATE}"
+
+ENV RESPONSES_FILE=/etc/webdeadend/responses.yaml
 
 # Health check configuration
 ENV PORT 3000

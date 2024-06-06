@@ -1,0 +1,45 @@
+"/this/url/here":
+  "POST":
+    "mediatype": "application/xml"
+    "base64": False
+    "responsestatus": 200
+    "body": |
+      <?xml version="1.0" encoding="UTF-8" standalone="no"?><updata>
+         <command force="false" name="update_with_inc_ota">
+            <url name="{{ matched.surprise }}.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.hostname }}/updates/update.zip</url>
+            <md5 name="update.zip">6f1b7cccead929f1ce3e53ef928f9894</md5>
+          <storagemem>24622458</storagemem>
+            <description country="CN" language="zh">解决一些bug</description>
+            <description country="ELSE" language="en">fix some bug</description>
+         </command>
+      </updata>
+"/other/{surprise}/here":
+  "POST":
+    "mediatype": "application/xml"
+    "base64": False
+    "responsestatus": 200
+    "body": |
+      <?xml version="1.0" encoding="UTF-8" standalone="no"?><updata>
+         <command force="false" name="update_with_inc_ota">
+            <url name="{{ matched.surprise }}.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.hostname }}/updates/update.zip</url>
+            <md5 name="update.zip">6f1b7cccead929f1ce3e53ef928f9894</md5>
+          <storagemem>24622458</storagemem>
+            <description country="CN" language="zh">解决一些bug</description>
+            <description country="ELSE" language="en">fix some bug</description>
+         </command>
+      </updata>
+"r/\/more\/(?P<surprise>.*?)\/here/":
+  "POST":
+    "mediatype": "application/xml"
+    "base64": False
+    "responsestatus": 200
+    "body": |
+      <?xml version="1.0" encoding="UTF-8" standalone="no"?><updata>
+         <command force="false" name="update_with_inc_ota">
+            <url name="{{ matched.surprise }}.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.hostname }}/updates/update.zip</url>
+            <md5 name="update.zip">6f1b7cccead929f1ce3e53ef928f9894</md5>
+          <storagemem>24622458</storagemem>
+            <description country="CN" language="zh">解决一些bug</description>
+            <description country="ELSE" language="en">fix some bug</description>
+         </command>
+      </updata>

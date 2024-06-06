@@ -1,4 +1,4 @@
-"/this/url/here":
+"/ota/service/request":
   "POST":
     "mediatype": "application/xml"
     "base64": False
@@ -6,40 +6,16 @@
     "body": |
       <?xml version="1.0" encoding="UTF-8" standalone="no"?><updata>
          <command force="false" name="update_with_inc_ota">
-            <url name="{{ matched.surprise }}.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.hostname }}/updates/update.zip</url>
-            <md5 name="update.zip">6f1b7cccead929f1ce3e53ef928f9894</md5>
+            <url name="update.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.hostname }}/updates/ota/update.zip</url>
+            <md5 name="update.zip">962cd8b6c1c9b1ec7ac4dec28809a7a6</md5>
           <storagemem>24622458</storagemem>
             <description country="CN" language="zh">解决一些bug</description>
             <description country="ELSE" language="en">fix some bug</description>
          </command>
       </updata>
-"/other/{surprise}/here":
-  "POST":
-    "mediatype": "application/xml"
-    "base64": False
+"/updates/ota/update.zip":
+  "GET":
+    "mediatype": "application/zip"
+    "base64": True
     "responsestatus": 200
-    "body": |
-      <?xml version="1.0" encoding="UTF-8" standalone="no"?><updata>
-         <command force="false" name="update_with_inc_ota">
-            <url name="{{ matched.surprise }}.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.hostname }}/updates/update.zip</url>
-            <md5 name="update.zip">6f1b7cccead929f1ce3e53ef928f9894</md5>
-          <storagemem>24622458</storagemem>
-            <description country="CN" language="zh">解决一些bug</description>
-            <description country="ELSE" language="en">fix some bug</description>
-         </command>
-      </updata>
-"r/\/more\/(?P<surprise>.*?)\/here/":
-  "POST":
-    "mediatype": "application/xml"
-    "base64": False
-    "responsestatus": 200
-    "body": |
-      <?xml version="1.0" encoding="UTF-8" standalone="no"?><updata>
-         <command force="false" name="update_with_inc_ota">
-            <url name="{{ matched.surprise }}.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.hostname }}/updates/update.zip</url>
-            <md5 name="update.zip">6f1b7cccead929f1ce3e53ef928f9894</md5>
-          <storagemem>24622458</storagemem>
-            <description country="CN" language="zh">解决一些bug</description>
-            <description country="ELSE" language="en">fix some bug</description>
-         </command>
-      </updata>
+    "body": "UEsDBBQAAAAAAFSWxlgAAAAAAAAAAAAAAAAHACAAdXBkYXRlL1VUDQAHYHhhZmB4YWZgeGFmdXgLAAEE+AEAAAQUAAAAUEsDBBQACAAIAF2WxlgAAAAAAAAAADIAAAAQACAAdXBkYXRlL2x1Y2t5LnR4dFVUDQAHcnhhZnR4YWZyeGFmdXgLAAEE+AEAAAQUAAAAi8wvVUgsSlUoLi1ILVLIKU3OrtTj4orMLy1SSEkty0xOVUjOL81JUUhKVchITM5OTdEDAFBLBwhd4PN/NAAAADIAAABQSwMEFAAIAAgAXZbGWAAAAAAAAAAA4wAAABsAIABfX01BQ09TWC91cGRhdGUvLl9sdWNreS50eHRVVA0AB3J4YWZ0eGFmenhhZnV4CwABBPgBAAAEFAAAAGNgFWNnYGJg8E1MVvAPVohQgAKQGAMnEBsB8UYgBvEfMxAFHENCgqBMkI4jQCyPpoQJKs7PwCCenJ+rl1hQkJOqF5JaUeKal5yfkpmXDlF3GYgFGBikEGpyEotLSotTU1ISS1KVA4JBikJD3HQtrA2NTYwMzS0tTFIrEtNAwhvUFEHWMAAAUEsHCGidwueGAAAA4wAAAFBLAQIUAxQAAAAAAFSWxlgAAAAAAAAAAAAAAAAHACAAAAAAAAAAAADtQQAAAAB1cGRhdGUvVVQNAAdgeGFmYHhhZmB4YWZ1eAsAAQT4AQAABBQAAABQSwECFAMUAAgACABdlsZYXeDzfzQAAAAyAAAAEAAgAAAAAAAAAAAApIFFAAAAdXBkYXRlL2x1Y2t5LnR4dFVUDQAHcnhhZnR4YWZyeGFmdXgLAAEE+AEAAAQUAAAAUEsBAhQDFAAIAAgAXZbGWGidwueGAAAA4wAAABsAIAAAAAAAAAAAAKSB1wAAAF9fTUFDT1NYL3VwZGF0ZS8uX2x1Y2t5LnR4dFVUDQAHcnhhZnR4YWZ6eGFmdXgLAAEE+AEAAAQUAAAAUEsFBgAAAAADAAMAHAEAAMYBAAAAAA=="

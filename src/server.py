@@ -11,7 +11,6 @@ import xmltodict
 from flask import Flask, request, jsonify, Response, g
 from flask.logging import create_logger
 import graypy
-from response.handlers import handle_request
 
 # Define a constant for the maximum Graylog payload size (e.g., 1MB)
 MAX_GELF_PAYLOAD_SIZE = 1024 * 1024  # 1MB
@@ -52,8 +51,15 @@ else:
 request_counter: Counter[str] = Counter()
 request_details: List[Dict[str, Union[str, int]]] = []
 
+# Function to provide the logger instead of importing it directly
+def set_logger(target_logger: logging.Logger) -> None:
+    global logger
+    logger = target_logger
+
 def get_logger() -> logging.Logger:
     return logger
+
+from response.handlers import handle_request
 
 def get_request_body() -> Union[Dict[str, Any], str]:
     """Extract and return the request body based on its content type."""
@@ -188,5 +194,10 @@ def catch_all(path: str) -> Response:
     return handle_request()
 
 if __name__ == "__main__":
+    from response.handlers import set_logger as set_handlers_logger
+    from response.utils import set_logger as set_utils_logger
+    set_handlers_logger(logger)
+    set_utils_logger(logger)
+
     port = int(os.getenv("PORT", 3000))
     app.run(host="0.0.0.0", port=port)

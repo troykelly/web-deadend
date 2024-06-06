@@ -1,14 +1,21 @@
 # src/response/utils.py
 
 import re
+import logging
 from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+def set_logger(target_logger: logging.Logger) -> None:
+    global logger
+    logger = target_logger
 
 def route_matches_url(route: str, url: str) -> Optional[Dict[str, str]]:
     """
     Check if the route matches the given URL and extract variables.
     Supports plain text, placeholders, and regex matches.
     """
-    print(f"Matching route: {route} with URL: {url}")
+    logger.debug(f"Matching route: {route} with URL: {url}")
 
     # Plain text or wildcard match
     if route == url:
