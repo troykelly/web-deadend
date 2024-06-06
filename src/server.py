@@ -12,6 +12,9 @@ from flask import Flask, request, jsonify, Response, g
 from flask.logging import create_logger
 import graypy
 
+# Define a constant for the maximum Graylog payload size (e.g., 1MB)
+MAX_GELF_PAYLOAD_SIZE = 1024 * 1024  # 1MB
+
 VERSION = "__VERSION__"  # <-- This will be replaced during the release process
 
 app = Flask(__name__)
@@ -73,7 +76,11 @@ def get_request_body() -> Union[Dict[str, Any], str]:
             for key, value in request.form.items():
                 data[key] = value
             for key, file in request.files.items():
-                data[key] = base64.b64encode(file.read()).decode("utf-8")
+                file_data = base64.b64encode(file.read()).decode("utf-8")
+                if len(file_data) > MAX_GELF_PAYLOAD_SIZE:
+                    data[key] = "File too large, removed to prevent payload overflow"
+                else:
+                    data[key] = file_data
             return data
 
         logger.warning("Unhandled content type: %s", content_type)
@@ -86,10 +93,16 @@ def get_request_body() -> Union[Dict[str, Any], str]:
 def send_to_gelf(data: Dict[str, Any]) -> None:
     """Send data to the GELF server if configured."""
     if gelf_logger:
-        # Create a message for the log
-        message = f"{data['method']} {data['path']} {data['response_status']} {data['duration_ms']}ms"
-        gelf_logger.info(message, extra=data)
-        logger.debug(f"Sent data to {gelf_host}")
+        try:
+            message = f"{data['method']} {data['path']} {data['response_status']} {data['duration_ms']}ms"
+            log_entry = json.dumps(data).encode('utf-8')
+            if len(log_entry) > MAX_GELF_PAYLOAD_SIZE:
+                logger.error("GELF payload size exceeds the limit, reducing body size.")
+                data["body"] = "Request body too large, removed to prevent payload overflow"
+            gelf_logger.info(message, extra=data)
+            logger.debug(f"Sent data to {gelf_host}")
+        except Exception as e:
+            logger.error("Error sending data to GELF: %s", e)
 
 @app.before_request
 def before_request() -> None:
