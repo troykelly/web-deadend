@@ -73,6 +73,12 @@ docker build -t web-deadend .
 docker run -p 3000:3000 -e PORT=3000 -e GELF_SERVER="udp://graylog.example.com:12201" web-deadend
 ```
 
+##### Or
+
+```bash
+docker run -p 3000:3000 -e PORT=3000 -e GELF_SERVER="udp://graylog.example.com:12201" ghcr.io/troykelly/web-deadend:edge
+```
+
 ### Endpoints
 
 - `GET /deadend-status`: Returns service status.
