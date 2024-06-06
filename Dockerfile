@@ -15,9 +15,11 @@ RUN apt-get update && \
 
 # Copy application code and default configuration with proper ownership
 COPY --chown=webdeadend:webdeadend src /app/src
+COPY docker/entrypoint.sh /entrypoint.sh
 
 # Ensure the working directory has correct ownership
-RUN chown -R webdeadend:webdeadend /app
+RUN chown -R webdeadend:webdeadend /app && \
+    chmod +x /entrypoint.sh
 
 # Metadata labels for best practices
 ARG BUILD_DATE
@@ -45,4 +47,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Switch to non-root user
 USER webdeadend
 
-CMD ["sh", "-c", "exec gunicorn -b \"0.0.0.0:$$PORT\" \"src.server:app\""]
+# Use the entrypoint script
+ENTRYPOINT ["/entrypoint.sh"]
+
+# Default CMD to run the application
+CMD ["gunicorn", "src.server:app"]
