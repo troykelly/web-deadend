@@ -112,6 +112,7 @@ def after_request(response: Response) -> Response:
     request_data: Dict[str, Any] = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "version": VERSION if VERSION != "__VERSION__" else "dev",
+        "hostname": request.host,
         "remote_addr": request.remote_addr,
         "method": request.method,
         "path": request.path,
