@@ -7,7 +7,6 @@ from collections import Counter
 from typing import Any, Dict, Union, List
 from urllib.parse import urlparse, parse_qs
 import base64
-
 import xmltodict
 from flask import Flask, request, jsonify, Response, g
 from flask.logging import create_logger
@@ -77,8 +76,11 @@ def get_request_body() -> Union[Dict[str, Any], str]:
 def send_to_gelf(data: Dict[str, Any]) -> None:
     """Send data to the GELF server if configured."""
     if gelf_handler:
-        logger.info("Sending payload to GELF", extra=data)
-        gelf_handler.emit(logging.makeLogRecord({"msg": "Payload Data", "extra": data}))
+        log_record = logging.LogRecord(name="", level=logging.INFO, pathname=__file__,
+                                       lineno=0, msg="Payload Data", args=(), exc_info=None)
+        log_record.extra = data
+        gelf_handler.emit(log_record)
+        logger.info("Sent payload to GELF")
 
 @app.before_request
 def before_request() -> None:
@@ -87,7 +89,13 @@ def before_request() -> None:
 
 @app.after_request
 def after_request(response: Response) -> Response:
-    """Log ending information and calculate request duration."""
+    """
+    Log ending information and calculate request duration. Skip logging
+    for health check requests from localhost.
+    """
+    if request.path == "/deadend-status" and request.remote_addr == "127.0.0.1":
+        return response
+
     request_duration = time.time() - g.start_time
     request_size = len(request.data)
     response_size = response.calculate_content_length()
