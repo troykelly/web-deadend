@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from collections import Counter
 from typing import Any, Dict, Union, List
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs  # Import parse_qs for form data
 
 import xmltodict
 from flask import Flask, request, jsonify, Response
@@ -55,6 +55,9 @@ def get_request_body() -> Union[Dict[str, Any], str]:
     
     elif content_type == "text/plain":
         return request.data.decode("utf-8")
+    
+    elif content_type == "application/x-www-form-urlencoded":
+        return parse_qs(request.data.decode("utf-8"))
 
     else:
         logger.warning(f"Unhandled content type: {content_type}")
@@ -64,7 +67,6 @@ def get_request_body() -> Union[Dict[str, Any], str]:
 def deadend_status() -> Response:
     """Endpoint to return service status."""
     return jsonify({"service": "ok"}), 200
-
 
 @app.route("/deadend-counter", methods=["GET"])
 def deadend_counter() -> Response:
@@ -78,7 +80,6 @@ def deadend_counter() -> Response:
         "request_type_breakdown": request_breakdown,
     }
     return jsonify(response_data), 200
-
 
 @app.route(
     "/",
@@ -116,7 +117,6 @@ def catch_all(path: str) -> Response:
 
     # Return empty response
     return "", 204
-
 
 if __name__ == "__main__":
     # Get port from the environment variable or default to 3000
