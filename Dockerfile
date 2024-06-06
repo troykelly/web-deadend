@@ -45,5 +45,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Switch to non-root user
 USER webdeadend
 
-# Command to run the Gunicorn server
-CMD ["gunicorn", "-b", "0.0.0.0:${PORT}", "src.server:app"]
+CMD ["sh", "-c", "exec gunicorn -b \"0.0.0.0:$$PORT\" \"src.server:app\""]
