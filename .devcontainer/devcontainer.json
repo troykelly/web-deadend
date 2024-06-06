@@ -44,7 +44,8 @@
 				"ZainChen.json",
 				"VisualStudioExptTeam.vscodeintellicode",
 				"VisualStudioExptTeam.vscodeintellicode-completions",
-				"qwtel.sqlite-viewer"
+				"qwtel.sqlite-viewer",
+				"redhat.vscode-yaml"
 			]
 		},
 		"settings": {

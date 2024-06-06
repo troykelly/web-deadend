@@ -11,6 +11,7 @@ import xmltodict
 from flask import Flask, request, jsonify, Response, g
 from flask.logging import create_logger
 import graypy
+from response.handlers import handle_request
 
 # Define a constant for the maximum Graylog payload size (e.g., 1MB)
 MAX_GELF_PAYLOAD_SIZE = 1024 * 1024  # 1MB
@@ -181,7 +182,7 @@ def deadend_counter() -> Response:
 )
 def catch_all(path: str) -> Response:
     """Catch-all endpoint to handle requests."""
-    return "", 204
+    return handle_request()
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 3000))
