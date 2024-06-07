@@ -4,14 +4,15 @@
     "base64": False
     "responsestatus": 200
     "body": |
-      <?xml version="1.0" encoding="UTF-8" standalone="no"?><updata>
-         <command force="false" name="update_with_inc_ota">
-            <url name="update.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.hostname }}/updates/ota/update.zip</url>
-            <md5 name="update.zip">962cd8b6c1c9b1ec7ac4dec28809a7a6</md5>
+      <?xml version="1.0" encoding="UTF-8" standalone="no"?>
+      <updata>
+        <command force="false" name="update_with_inc_ota">
+          <url name="update.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.host }}/updates/ota/update.zip</url>
+          <md5 name="update.zip">962cd8b6c1c9b1ec7ac4dec28809a7a6</md5>
           <storagemem>24622458</storagemem>
-            <description country="CN" language="zh">解决一些bug</description>
-            <description country="ELSE" language="en">fix some bug</description>
-         </command>
+          <description country="CN" language="zh">解决一些bug</description>
+          <description country="ELSE" language="en">fix some bug</description>
+        </command>
       </updata>
 "/updates/ota/update.zip":
   "GET":
