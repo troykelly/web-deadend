@@ -18,7 +18,6 @@ from flask.logging import create_logger
 import graypy
 from response.handlers import handle_request
 
-
 # Define a constant for the maximum Graylog payload size (e.g., 1MB)
 MAX_GELF_PAYLOAD_SIZE = 1024 * 1024  # 1MB
 VERSION = "__VERSION__"  # <-- This will be replaced during the release process
@@ -217,6 +216,8 @@ class Server:
         port = int(os.getenv("PORT", 3000))
         self.app.run(host="0.0.0.0", port=port)
 
+
+app = Server().app
 
 if __name__ == "__main__":
     server = Server()
