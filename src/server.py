@@ -51,16 +51,19 @@ class Server:
         self.logger.setLevel(getattr(logging, debug_level))
 
     def _setup_proxy_fix(self) -> None:
-        """Configures the ProxyFix middleware based on trusted proxies."""
-        trust_all = bool(os.getenv("TRUST_ALL_PROXIES"))
+        """
+        Configures the ProxyFix middleware based on the depth of trusted proxies.
+        """
+        trust_all = bool(os.getenv("TRUST_ALL_PROXIES", "false").lower() in ["true", "1", "yes"])
         trusted_proxies = [proxy.strip() for proxy in os.getenv("TRUSTED_PROXIES", "").split(",") if proxy]
-        
+        num_proxies = 1  # Default to trust only the immediate upstream proxy
+
         if trust_all:
-            # Trust all proxies; this sets high values for x_for and other parameters
-            self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_for=2, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+            # Trust all proxies by setting x_for and other parameters to a high value
+            self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_for=100, x_proto=1, x_host=1, x_port=1, x_prefix=1)
         elif trusted_proxies:
-            # Apply ProxyFix only if there are trusted proxies specified
-            self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1)
+            # Apply ProxyFix with the number of trusted proxies specified
+            self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_for=num_proxies, x_proto=1, x_host=1, x_port=1, x_prefix=1)
         else:
             self.logger.warning("No trusted proxies specified and TRUST_ALL_PROXIES not set; ProxyFix not configured.")
     
