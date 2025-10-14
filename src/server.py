@@ -121,6 +121,8 @@ class Server:
     def _gather_request_data(self, response: Response, request_duration: float) -> Dict[str, Any]:
         """Gathers detailed data about the request and response."""
         response_size = response.calculate_content_length()
+        # Calculate request size from Content-Length header if available, otherwise use request.data
+        request_size = request.content_length if request.content_length is not None else len(request.data)
         return {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "version": VERSION if VERSION != "__VERSION__" else "dev",
@@ -131,7 +133,7 @@ class Server:
             "headers": dict(request.headers),
             "query_params": request.args.to_dict(),
             "body": self._get_request_body(),
-            "request_size": len(request.data),
+            "request_size": request_size,
             "response_status": response.status_code,
             "response_size": response_size if response_size is not None else 0,
             "duration_ms": int(request_duration * 1000),
@@ -141,17 +143,28 @@ class Server:
         """Extract and return the request body based on its content type."""
         content_type = request.headers.get("Content-Type", "").lower().strip()
         if not content_type:
-            return request.data.decode("utf-8")
+            # Try to decode as text if no content type specified
+            try:
+                return request.data.decode("utf-8") if request.data else ""
+            except UnicodeDecodeError:
+                return base64.b64encode(request.data).decode("utf-8") if request.data else ""
 
         try:
             if content_type == "application/json":
                 return request.get_json(silent=True) or {}
             if content_type == "application/xml":
-                return xmltodict.parse(request.data.decode("utf-8"))
+                return xmltodict.parse(request.data.decode("utf-8")) if request.data else {}
             if content_type == "text/plain":
-                return request.data.decode("utf-8")
+                return request.data.decode("utf-8") if request.data else ""
             if content_type == "application/x-www-form-urlencoded":
-                return parse_qs(request.data.decode("utf-8"))
+                # Use request.form which properly handles form-encoded data
+                # Convert ImmutableMultiDict to regular dict, keeping only first value for each key
+                if request.form:
+                    return {key: request.form.get(key) for key in request.form.keys()}
+                # Fallback to parsing raw data if form is empty
+                if request.data:
+                    return parse_qs(request.data.decode("utf-8"))
+                return {}
 
             if content_type.startswith("multipart/form-data"):
                 return self._handle_multipart_form_data()
@@ -160,7 +173,10 @@ class Server:
             return {}
 
         self.logger.warning("Unhandled content type: %s", content_type)
-        return request.data.decode("utf-8")
+        try:
+            return request.data.decode("utf-8") if request.data else ""
+        except UnicodeDecodeError:
+            return base64.b64encode(request.data).decode("utf-8") if request.data else ""
 
     def _handle_multipart_form_data(self) -> Dict[str, Any]:
         """Handles multipart form data content type."""
