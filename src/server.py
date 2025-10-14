@@ -196,11 +196,34 @@ class Server:
         if self.gelf_logger:
             try:
                 message = f"{data['method']} {data['path']} {data['response_status']} {data['duration_ms']}ms"
-                log_entry = json.dumps(data).encode("utf-8")
+
+                # Create a copy of data for GELF logging
+                gelf_data = data.copy()
+
+                # If body is a dict, flatten it into separate fields with 'body_' prefix
+                if isinstance(gelf_data.get('body'), dict):
+                    body_dict = gelf_data.pop('body')
+                    for key, value in body_dict.items():
+                        # Add body fields with 'body_' prefix for easy filtering in Graylog
+                        gelf_data[f'body_{key}'] = value
+
+                # If query_params is a dict, flatten it into separate fields with 'query_' prefix
+                if isinstance(gelf_data.get('query_params'), dict) and gelf_data['query_params']:
+                    query_dict = gelf_data.pop('query_params')
+                    for key, value in query_dict.items():
+                        # Add query fields with 'query_' prefix for easy filtering in Graylog
+                        gelf_data[f'query_{key}'] = value
+
+                # Check payload size
+                log_entry = json.dumps(gelf_data).encode("utf-8")
                 if len(log_entry) > MAX_GELF_PAYLOAD_SIZE:
-                    self.logger.error("GELF payload size exceeds the limit; reducing body size.")
-                    data["body"] = "Request body too large, removed to prevent payload overflow"
-                self.gelf_logger.info(message, extra=data)
+                    self.logger.error("GELF payload size exceeds the limit; removing body and query fields.")
+                    # Remove all body_ and query_ fields if payload is too large
+                    gelf_data = {k: v for k, v in gelf_data.items() if not (k.startswith('body_') or k.startswith('query_'))}
+                    gelf_data['body'] = "Request body too large, removed to prevent payload overflow"
+                    gelf_data['query_params'] = {}
+
+                self.gelf_logger.info(message, extra=gelf_data)
                 self.logger.debug(f"Sent data to GELF server at {self.gelf_logger.handlers[0].host}")
             except Exception as e:
                 self.logger.error("Error sending data to GELF: %s", e)
