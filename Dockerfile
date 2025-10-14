@@ -5,13 +5,9 @@ RUN groupadd -g 1000 webdeadend && useradd -u 1000 -g webdeadend -d /app -s /bin
 
 WORKDIR /app
 
-# Install dependencies and create a virtual environment
+# Install dependencies
 COPY requirements.txt .
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y wkhtmltopdf && \
-    pip install --no-cache-dir -r requirements.txt && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code and default configuration with proper ownership
 COPY --chown=webdeadend:webdeadend src /app/src
@@ -44,7 +40,7 @@ ENV RESPONSES_FILE=/etc/webdeadend/responses.yaml
 ENV PYTHONPATH="/app/src"
 
 # Health check configuration
-ENV PORT 3000
+ENV PORT=3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD python -c 'import os, requests; port = os.getenv("PORT", 3000); url = f"http://localhost:{port}/deadend-status"; exit(1) if requests.get(url).status_code != 200 else exit(0)'
 
