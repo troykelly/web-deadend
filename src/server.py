@@ -201,15 +201,23 @@ class Server:
                 gelf_data = data.copy()
 
                 # If body is a dict, flatten it into separate fields with 'body_' prefix
+                # Keep the original 'body' field as JSON for structured logging
                 if isinstance(gelf_data.get('body'), dict):
-                    body_dict = gelf_data.pop('body')
+                    body_dict = gelf_data['body']
+                    # Store original body as JSON string
+                    gelf_data['body_json'] = json.dumps(body_dict)
+                    # Also flatten for easy searching
                     for key, value in body_dict.items():
                         # Add body fields with 'body_' prefix for easy filtering in Graylog
                         gelf_data[f'body_{key}'] = value
 
                 # If query_params is a dict, flatten it into separate fields with 'query_' prefix
+                # Keep the original 'query_params' field as JSON for structured logging
                 if isinstance(gelf_data.get('query_params'), dict) and gelf_data['query_params']:
-                    query_dict = gelf_data.pop('query_params')
+                    query_dict = gelf_data['query_params']
+                    # Store original query_params as JSON string
+                    gelf_data['query_params_json'] = json.dumps(query_dict)
+                    # Also flatten for easy searching
                     for key, value in query_dict.items():
                         # Add query fields with 'query_' prefix for easy filtering in Graylog
                         gelf_data[f'query_{key}'] = value
