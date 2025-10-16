@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 # Create a group and user with a specific uid and gid
 RUN groupadd -g 1000 webdeadend && useradd -u 1000 -g webdeadend -d /app -s /bin/bash webdeadend

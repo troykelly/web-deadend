@@ -31,7 +31,7 @@
 
 ### Prerequisites
 
-- Python 3.12 or later.
+- Python 3.13 or later.
 - Docker (for containerised deployment).
 - Optional: Graylog server for GELF logging.
 

@@ -6,9 +6,10 @@
     "body": |
       <?xml version="1.0" encoding="UTF-8" standalone="no"?><updata>
          <command force="false" name="update_with_inc_ota">
-            <url name="update.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.hostname }}/updates/update.zip</url>
+            <url name="update.zip" locattr="" updatezip="true">{{ request.protocol }}://{{ request.host }}/updates/update.zip{{ requestdata }}</url>
             <md5 name="update.zip">6f1b7cccead929f1ce3e53ef928f9894</md5>
           <storagemem>24622458</storagemem>
+            <request_id>{{ request.id }}</request_id>
             <description country="CN" language="zh">解决一些bug</description>
             <description country="ELSE" language="en">fix some bug</description>
          </command>
@@ -45,3 +46,23 @@
           <description country="ELSE" language="en">fix some bug</description>
         </command>
       </updata>
+# Example demonstrating all available template variables
+"/api/demo":
+  "POST":
+    "mediatype": "application/json"
+    "base64": False
+    "responsestatus": 200
+    "body": |
+      {
+        "request_id": "{{ request.id }}",
+        "timestamp": {{ request.epoch }},
+        "client_ip_safe": "{{ request.safe_ip }}",
+        "protocol": "{{ request.protocol }}",
+        "host": "{{ request.host }}",
+        "method": "{{ request.method }}",
+        "path": "{{ request.path }}",
+        "query_params": {{ query | tojson }},
+        "body_params": {{ body | tojson }},
+        "encoded_request_data": "{{ requestdata }}",
+        "note": "This demonstrates access to structured body and query objects"
+      }

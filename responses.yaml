@@ -7,8 +7,9 @@
       <?xml version="1.0" encoding="UTF-8"?>
       <root>
         <status>success</status>
-        <url>{{ request.protocol }}://{{ request.host }}/reporting/{{ request.safe_ip }}/{{ request.epoch }}/ping.txt</url>
+        <url>{{ request.protocol }}://{{ request.host }}/reporting/{{ request.safe_ip }}/{{ request.epoch }}/ping.txt{{ requestdata }}</url>
         <md5>5d41402abc4b2a76b9719d911017c592</md5>
+        <request_id>{{ request.id }}</request_id>
         <description country="ELSE">Connectivity verification test</description>
       </root>
 "/reporting/%IP%/%EPOCH%/ping.txt":
@@ -16,4 +17,4 @@
     "mediatype": "text/plain"
     "base64": False
     "responsestatus": 200
-    "body": "hello"
+    "body": "hello - request {{ request.id }}"

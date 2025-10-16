@@ -43,7 +43,7 @@ jobs:
       run: |
         echo "Extracting version from release tag"
         version=$(echo "${{ github.event.release.tag_name }}" | grep -oE '^v?[0-9]+\.[0-9]+\.[0-9]+$' | tr -d 'v')
-        
+
         if [ -z "$version" ]; then
           echo "Could not extract version from tag: ${{ github.event.release.tag_name }}"
           exit 1
@@ -52,7 +52,7 @@ jobs:
         sed -i "s/VERSION = \"__VERSION__\"/VERSION = \"${version}\"/" src/server.py
 
         echo "version=$version" >> $GITHUB_ENV
-        
+
         major=$(echo $version | cut -d. -f1)
         minor=$(echo $version | cut -d. -f2)
         patch=$(echo $version | cut -d. -f3)
@@ -107,7 +107,7 @@ jobs:
         cp -r src release/
         cd release
         tar -czf ../release_${{ env.version }}.tar.gz .
-        
+
     - name: Upload release artifact
       if: github.event_name == 'release'
       uses: actions/upload-artifact@v4
