@@ -4,10 +4,11 @@ import os
 import yaml
 import base64
 import logging
+import time
 from typing import Any, Dict, Optional
 from flask import request, Response
 from jinja2 import Template
-from response.utils import route_matches_url
+from response.utils import route_matches_url, safe_ip
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,13 @@ def handle_request() -> Response:
     host = request.host
     port = request.environ.get('SERVER_PORT')
 
+    # Get client IP address and convert to safe format
+    client_ip = request.remote_addr or "unknown"
+    safe_client_ip = safe_ip(client_ip)
+
+    # Get current epoch timestamp
+    epoch_timestamp = int(time.time())
+
     context = {
         "protocol": protocol,
         "host": host,
@@ -66,7 +74,9 @@ def handle_request() -> Response:
         "path": url,
         "headers": dict(request.headers),
         "query_params": request.args.to_dict(),
-        "body": request.data.decode("utf-8")
+        "body": request.data.decode("utf-8"),
+        "safe_ip": safe_client_ip,
+        "epoch": epoch_timestamp
     }
 
     response_data = get_response_data(responses_config, method, url, path_variables)
