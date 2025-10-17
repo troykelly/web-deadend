@@ -7,9 +7,15 @@ set -e
 PORT=${PORT:-3000}
 
 # Performance tuning for high-throughput honeypot (10k+ req/s target)
-# Workers: Scale based on CPU cores (default 32 for 16-core systems)
-# Reduce from default if running on smaller instances
-WORKERS=${WORKERS:-32}
+# Workers: Auto-calculate based on CPU cores
+# Formula for gevent workers (I/O-bound): (2 × CPU_cores) + 1
+# This provides good concurrency while maintaining isolation between workers
+if [ -z "$WORKERS" ]; then
+    # Detect CPU count (works on Linux and most Unix systems)
+    CPU_COUNT=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+    WORKERS=$((2 * CPU_COUNT + 1))
+    echo "Auto-detected $CPU_COUNT CPU cores, setting WORKERS=$WORKERS"
+fi
 
 # Timeout: Reduced from 120s to 30s for faster request cycling
 TIMEOUT=${TIMEOUT:-30}

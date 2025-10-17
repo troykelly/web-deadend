@@ -163,3 +163,5 @@ cython_debug/
 
 # Application
 /llm.md
+CLAUDE.md
+ota.md

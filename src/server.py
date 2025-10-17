@@ -2,15 +2,17 @@
 Server module for handling incoming requests using Flask.
 """
 
+import atexit
 import base64
 import ipaddress
 import json
 import logging
 import os
 import queue
+import signal
 import threading
 import time
-from collections import Counter, deque
+from collections import Counter, OrderedDict, deque
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Set, Union
 from urllib.parse import parse_qs, urlparse  # urlencode unused
@@ -29,6 +31,52 @@ MAX_GELF_PAYLOAD_SIZE = 1024 * 1024  # 1MB
 VERSION = "__VERSION__"  # <-- This will be replaced during the release process
 
 
+class BoundedCounter:
+    """Thread-safe counter with maximum size limit using LRU eviction.
+
+    Prevents unbounded memory growth from unique keys (e.g., random paths in attacks).
+    When maxsize is reached, the least recently accessed item is removed.
+    """
+
+    def __init__(self, maxsize: int = 10000):
+        self.maxsize = maxsize
+        self.data: OrderedDict = OrderedDict()
+        self.lock = threading.Lock()
+
+    def __setitem__(self, key: str, value: int) -> None:
+        with self.lock:
+            if key in self.data:
+                # Move to end (mark as recently used)
+                self.data.move_to_end(key)
+            elif len(self.data) >= self.maxsize:
+                # Remove oldest item (LRU eviction)
+                self.data.popitem(last=False)
+            self.data[key] = value
+
+    def __getitem__(self, key: str) -> int:
+        with self.lock:
+            return self.data.get(key, 0)
+
+    def increment(self, key: str, amount: int = 1) -> None:
+        """Increment counter for key by amount."""
+        with self.lock:
+            current = self.data.get(key, 0)
+            if key in self.data:
+                self.data.move_to_end(key)
+            elif len(self.data) >= self.maxsize:
+                self.data.popitem(last=False)
+            self.data[key] = current + amount
+
+    def most_common(self, n: int) -> List[tuple]:
+        """Return top n items by count."""
+        with self.lock:
+            return sorted(self.data.items(), key=lambda x: x[1], reverse=True)[:n]
+
+    def __len__(self) -> int:
+        with self.lock:
+            return len(self.data)
+
+
 class Server:
     """Server class to handle incoming requests and configuration."""
 
@@ -36,6 +84,11 @@ class Server:
         self.app = Flask(__name__)
         # Set maximum request size to prevent memory exhaustion (100MB)
         self.app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024
+
+        # Maximum URL length for honeypot (64KB - captures attacks while preventing memory issues)
+        # Most web servers limit to 8KB, we allow 64KB to see long attack payloads
+        self.max_url_length = int(os.getenv("MAX_URL_LENGTH", 65536))
+
         self.logger = create_logger(self.app)
         self.request_counter: Counter[str] = Counter()
         # Use bounded deque instead of unbounded list to prevent memory exhaustion at scale
@@ -45,15 +98,18 @@ class Server:
         # Async GELF logging queue for non-blocking I/O at 10k req/s
         self.gelf_queue: Optional[queue.Queue] = None
         self.gelf_worker_thread: Optional[threading.Thread] = None
+        self.gelf_drops: int = 0  # Track dropped GELF logs due to queue saturation
 
         # Stats logging thread
         self.stats_worker_thread: Optional[threading.Thread] = None
         self.stats_shutdown_event = threading.Event()
 
-        # Stats tracking for periodic logging
-        self.unique_ips: Set[str] = set()
-        self.path_counter: Counter[str] = Counter()
-        self.error_counter: Counter[int] = Counter()
+        # Stats tracking for periodic logging (bounded to prevent memory exhaustion)
+        # Keep last 50k unique IPs and 10k paths max
+        self.unique_ips: deque = deque(maxlen=50000)  # Bounded set (FIFO eviction)
+        self.unique_ips_set: Set[str] = set()  # For O(1) lookup
+        self.path_counter = BoundedCounter(maxsize=10000)  # Bounded counter (LRU eviction)
+        self.error_counter: Counter[int] = Counter()  # Status codes are naturally bounded
         self.total_bytes_received: int = 0
         self.total_bytes_sent: int = 0
         self.last_stats: Dict[str, Any] = {}
@@ -64,6 +120,7 @@ class Server:
         self._setup_gelf_handler()
         self._setup_healthcheck_allowed()
         self._setup_stats_worker()
+        self._setup_signal_handlers()
 
         # Flask app configuration
         self.app.before_request(self.before_request)
@@ -83,27 +140,49 @@ class Server:
     def _setup_proxy_fix(self) -> None:
         """
         Configures the ProxyFix middleware based on the depth of trusted proxies.
+
+        SECURITY: By default, ProxyFix is NOT enabled to prevent X-Forwarded-* header spoofing.
+        Set TRUSTED_PROXIES to enable proxy header processing when behind a load balancer.
+
+        Examples:
+            TRUSTED_PROXIES="10.0.0.1" - Trust 1 proxy
+            TRUSTED_PROXIES="10.0.0.1,10.0.0.2" - Trust 2 proxies
+            TRUST_ALL_PROXIES=true - Trust all proxies (DANGEROUS - use only in dev)
         """
         trust_all = bool(os.getenv("TRUST_ALL_PROXIES", "false").lower() in ["true", "1", "yes"])
+        trusted_proxies_str = os.getenv("TRUSTED_PROXIES", "")
         trusted_proxies = [
-            proxy.strip() for proxy in os.getenv("TRUSTED_PROXIES", "").split(",") if proxy
+            proxy.strip() for proxy in trusted_proxies_str.split(",") if proxy.strip()
         ]
-        num_proxies = 1  # Default to trust only the immediate upstream proxy
 
         if trust_all:
-            # Trust all proxies by setting x_for and other parameters to a high value
+            # Trust all proxies by setting x_for to a high value
+            self.logger.warning(
+                "TRUST_ALL_PROXIES=true - Trusting up to 100 proxy hops. "
+                "This should ONLY be used in development. In production, use TRUSTED_PROXIES "
+                "instead."
+            )
             self.app.wsgi_app = ProxyFix(
                 self.app.wsgi_app, x_for=100, x_proto=1, x_host=1, x_port=1, x_prefix=1
             )
         elif trusted_proxies:
-            # Apply ProxyFix with the number of trusted proxies specified
+            # Count the number of proxies and apply ProxyFix
+            num_proxies = len(trusted_proxies)
+            self.logger.info(
+                f"ProxyFix enabled: Trusting {num_proxies} proxy/proxies: {trusted_proxies}"
+            )
             self.app.wsgi_app = ProxyFix(
                 self.app.wsgi_app, x_for=num_proxies, x_proto=1, x_host=1, x_port=1, x_prefix=1
             )
         else:
+            # SECURITY: No ProxyFix by default - prevents header spoofing
+            # All requests will show the immediate connection IP (typically load balancer)
             self.logger.warning(
-                "No trusted proxies specified and TRUST_ALL_PROXIES not set; "
-                "ProxyFix not configured."
+                "ProxyFix NOT enabled - X-Forwarded-* headers will be ignored. "
+                "If running behind a load balancer, IP-based features (filtering, stats) "
+                "will not work correctly. "
+                "Set TRUSTED_PROXIES environment variable (comma-separated proxy IPs) to enable "
+                "proxy support. Example: TRUSTED_PROXIES='10.0.0.1,10.0.0.2'"
             )
 
     def _setup_gelf_handler(self) -> None:
@@ -138,7 +217,7 @@ class Server:
             # Start background worker thread for async GELF logging
             self.gelf_worker_thread = threading.Thread(
                 target=self._gelf_worker,
-                daemon=True,  # Daemon thread exits when main program exits
+                daemon=False,  # Non-daemon for graceful shutdown
                 name="gelf-logger",
             )
             self.gelf_worker_thread.start()
@@ -224,13 +303,78 @@ class Server:
             self.log_format = "json"
 
         self.stats_worker_thread = threading.Thread(
-            target=self._stats_worker, daemon=True, name="stats-logger"
+            target=self._stats_worker, daemon=False, name="stats-logger"
         )
         self.stats_worker_thread.start()
         self.logger.info(
             f"Stats logging enabled (format={self.log_format}, "
             f"interval={self.log_stats_interval}s, heartbeat={self.log_heartbeat_interval}s)"
         )
+
+    def _setup_signal_handlers(self) -> None:
+        """Setup signal handlers for graceful shutdown."""
+        # Register shutdown handler for SIGTERM and SIGINT
+        signal.signal(signal.SIGTERM, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler)
+
+        # Also register atexit handler as backup
+        atexit.register(self._graceful_shutdown)
+
+        self.logger.info("Signal handlers registered for graceful shutdown")
+
+    def _signal_handler(self, signum, frame):
+        """Handle shutdown signals (SIGTERM, SIGINT)."""
+        sig_name = signal.Signals(signum).name
+        self.logger.info(f"Received {sig_name}, initiating graceful shutdown...")
+        self._graceful_shutdown()
+        # Exit after graceful shutdown
+        import sys
+
+        sys.exit(0)
+
+    def _graceful_shutdown(self) -> None:
+        """Gracefully shutdown background threads and flush queues."""
+        self.logger.info("Starting graceful shutdown...")
+
+        # Stop stats worker
+        if self.stats_worker_thread and self.stats_worker_thread.is_alive():
+            self.logger.info("Stopping stats worker thread...")
+            self.stats_shutdown_event.set()
+            self.stats_worker_thread.join(timeout=5)
+            if self.stats_worker_thread.is_alive():
+                self.logger.warning("Stats worker did not stop cleanly")
+            else:
+                self.logger.info("Stats worker stopped")
+
+        # Flush GELF queue
+        if self.gelf_queue:
+            queue_size = self.gelf_queue.qsize()
+            if queue_size > 0:
+                self.logger.info(f"Flushing {queue_size} GELF log entries...")
+                # Signal worker to stop after processing remaining items
+                self.gelf_queue.put(None)  # Shutdown signal
+
+                # Wait for queue to drain (max 30 seconds)
+                start_time = time.time()
+                while not self.gelf_queue.empty() and (time.time() - start_time) < 30:
+                    time.sleep(0.1)
+
+                remaining = self.gelf_queue.qsize()
+                if remaining > 0:
+                    self.logger.warning(f"Timed out flushing GELF queue, {remaining} entries lost")
+                else:
+                    self.logger.info("GELF queue flushed successfully")
+
+        # Wait for GELF worker to finish
+        if self.gelf_worker_thread and self.gelf_worker_thread.is_alive():
+            self.logger.info("Stopping GELF worker thread...")
+            self.gelf_worker_thread.join(timeout=5)
+            if self.gelf_worker_thread.is_alive():
+                self.logger.warning("GELF worker did not stop cleanly")
+            else:
+                self.logger.info("GELF worker stopped")
+
+        self.logger.info(f"Graceful shutdown complete. Total GELF drops: {self.gelf_drops}")
 
     def _stats_worker(self) -> None:
         """Background worker that logs stats periodically."""
@@ -311,10 +455,30 @@ class Server:
             self.logger.info(msg)
 
     def before_request(self) -> None:
-        """Store the start time and generate request ID before processing the request."""
+        """Store the start time and generate request ID before processing the request.
+
+        Also validates URL length for honeypot purposes - we want to capture attacks
+        but prevent memory exhaustion from extremely long URLs.
+        """
+        # Check URL length (path + query string)
+        url_length = len(request.full_path)
+        if url_length > self.max_url_length:
+            self.logger.warning(
+                f"URL length {url_length} exceeds limit {self.max_url_length}, "
+                f"truncating for logging. Path: {request.path[:100]}..."
+            )
+            # Log the oversized URL attempt but still process it (it's a honeypot!)
+            # We'll truncate in logging, but still return 414 to match HTTP spec
+
         g.start_time = time.time()
         # Generate UUIDv7 for request tracking (RFC 9562 compliant, time-sortable)
         g.request_id = str(uuid_utils.uuid7())
+
+        # Return 414 URI Too Long if URL exceeds limit (after logging above)
+        if url_length > self.max_url_length:
+            from flask import abort
+
+            abort(414)
 
     def after_request(self, response: Response) -> Response:
         """Log ending information and calculate request duration."""
@@ -331,8 +495,18 @@ class Server:
 
         # Track stats for periodic logging
         remote_ip = request.remote_addr or "unknown"
-        self.unique_ips.add(remote_ip)
-        self.path_counter[request.path] += 1
+
+        # Track unique IPs with bounded deque (FIFO eviction when full)
+        if remote_ip not in self.unique_ips_set:
+            self.unique_ips.append(remote_ip)
+            self.unique_ips_set.add(remote_ip)
+            # Clean up set when deque evicts old entries
+            if len(self.unique_ips_set) > len(self.unique_ips):
+                # Rebuild set from current deque
+                self.unique_ips_set = set(self.unique_ips)
+
+        # Track paths with bounded counter (LRU eviction when full)
+        self.path_counter.increment(request.path)
 
         # Track errors
         if response.status_code >= 400:
@@ -558,7 +732,24 @@ class Server:
                     )
                 except queue.Full:
                     # Queue full - drop the log entry to prevent blocking
-                    self.logger.warning("GELF queue full, dropping log entry")
+                    # Track drops and alert at intervals to avoid log spam
+                    self.gelf_drops += 1
+
+                    # Log error every 100 drops to indicate saturation attack or GELF server issue
+                    if self.gelf_drops % 100 == 0:
+                        self.logger.error(
+                            f"GELF QUEUE SATURATION: {self.gelf_drops} total logs dropped! "
+                            f"Queue size: {self.gelf_queue.qsize()}/{self.gelf_queue.maxsize}. "
+                            "Possible attack in progress or GELF server is slow/down. "
+                            "Consider increasing queue size (GELF_QUEUE_SIZE) or investigating "
+                            "GELF server performance."
+                        )
+                    elif self.gelf_drops == 1:
+                        # First drop is always logged as warning
+                        self.logger.warning(
+                            "GELF queue full, starting to drop log entries. "
+                            "Will report every 100 drops to avoid log spam."
+                        )
             except Exception as e:
                 self.logger.error("Error queueing GELF data: %s", e)
 

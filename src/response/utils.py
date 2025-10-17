@@ -1,25 +1,26 @@
 # src/response/utils.py
 
 import logging
-import re
-import signal
 from typing import Dict, Optional
+
+try:
+    import regex  # Use regex module with proper timeout support for gevent
+
+    REGEX_MODULE = "regex"
+except ImportError:
+    import re as regex  # Fallback to standard re module
+
+    REGEX_MODULE = "re"
+    logging.warning(
+        "regex module not installed, falling back to 're' module. "
+        "Install 'regex' for proper ReDoS protection in multi-threaded environments: "
+        "pip install regex"
+    )
 
 logger = logging.getLogger(__name__)
 
 # Regex timeout in seconds to prevent ReDoS attacks
 REGEX_TIMEOUT_SECONDS = 1
-
-
-class RegexTimeoutError(Exception):
-    """Raised when regex matching exceeds timeout."""
-
-    pass
-
-
-def _timeout_handler(signum, frame):
-    """Signal handler for regex timeout."""
-    raise RegexTimeoutError("Regex matching exceeded timeout")
 
 
 def validate_regex_pattern(pattern: str) -> bool:
@@ -40,14 +41,14 @@ def validate_regex_pattern(pattern: str) -> bool:
     ]
 
     for danger_pattern in nested_quantifier_patterns:
-        if re.search(danger_pattern, pattern):
+        if regex.search(danger_pattern, pattern):
             logger.warning(f"Regex pattern contains nested quantifiers (ReDoS risk): {pattern}")
             return False
 
     # Try to compile the pattern to ensure it's valid
     try:
-        re.compile(pattern)
-    except re.error as e:
+        regex.compile(pattern)
+    except regex.error as e:
         logger.warning(f"Invalid regex pattern: {pattern}, error: {e}")
         return False
 
@@ -144,23 +145,31 @@ def route_matches_url(route: str, url: str) -> Optional[Dict[str, str]]:
             logger.error(f"Dangerous regex pattern rejected: {pattern}")
             return None
 
-        # Set up timeout to prevent ReDoS attacks
-        old_handler = signal.signal(signal.SIGALRM, _timeout_handler)
-        signal.alarm(REGEX_TIMEOUT_SECONDS)
-
         try:
-            match = re.match(pattern, url)
-            signal.alarm(0)  # Cancel alarm
+            # Use regex module with built-in timeout (works properly with gevent/threading)
+            if REGEX_MODULE == "regex":
+                # regex module supports native timeout parameter
+                compiled = regex.compile(pattern, timeout=REGEX_TIMEOUT_SECONDS)
+                match = compiled.match(url)
+            else:
+                # Fallback to standard re (no timeout protection)
+                logger.warning(
+                    "Using standard 're' module without timeout protection. "
+                    "Install 'regex' module for proper ReDoS prevention."
+                )
+                compiled = regex.compile(pattern)
+                match = compiled.match(url)
+
             if match:
                 return match.groupdict()
-        except RegexTimeoutError:
+        except TimeoutError:
             logger.error(f"Regex timeout for pattern: {pattern} with URL: {url}")
+            return None
+        except regex.error as e:
+            logger.error(f"Regex compilation error for pattern: {pattern}: {e}")
             return None
         except Exception as e:
             logger.error(f"Regex error for pattern: {pattern}: {e}")
             return None
-        finally:
-            signal.alarm(0)  # Ensure alarm is cancelled
-            signal.signal(signal.SIGALRM, old_handler)  # Restore old handler
 
     return None
