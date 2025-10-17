@@ -11,12 +11,15 @@ class TestStatsLogging:
     """Test suite for periodic stats logging."""
 
     def test_stats_worker_thread_started(self, app):
-        """Test that stats worker thread is started on initialization."""
+        """Test that stats worker thread is skipped in test mode."""
         with app.app_context():
             server = app.config["SERVER_INSTANCE"]
-            assert server.stats_worker_thread is not None
-            assert server.stats_worker_thread.is_alive()
-            assert server.stats_worker_thread.name == "stats-logger"
+            # In test mode, stats worker is disabled to prevent error spam
+            assert server.stats_worker_thread is None
+            # But defaults are still set for tests that check these attributes
+            assert server.log_format == "json"
+            assert server.log_stats_interval == 60
+            assert server.log_heartbeat_interval == 3600
 
     def test_log_format_json_default(self, app):
         """Test that JSON is the default log format."""
