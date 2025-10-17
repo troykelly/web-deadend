@@ -118,6 +118,10 @@ class Server:
         self.last_stats: Dict[str, Any] = {}
         self.last_heartbeat_time: float = time.time()
 
+        # Proxy configuration warning flag (one-time warning to prevent log spam)
+        self.warned_missing_xff: bool = False
+        self.proxyfix_enabled: bool = False
+
         self._setup_logging()
         self._setup_proxy_fix()
         self._setup_gelf_handler()
@@ -219,6 +223,7 @@ class Server:
             self.app.wsgi_app = ProxyFix(
                 self.app.wsgi_app, x_for=100, x_proto=1, x_host=1, x_port=1, x_prefix=1
             )
+            self.proxyfix_enabled = True
             self.logger.info("[PROXY_DEBUG] ProxyFix middleware installed with x_for=100")
         elif trusted_networks:
             # Store trusted networks for validation and enable ProxyFix with depth 1
@@ -232,6 +237,7 @@ class Server:
             self.app.wsgi_app = ProxyFix(
                 self.app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1
             )
+            self.proxyfix_enabled = True
         else:
             # SECURITY: No ProxyFix by default - prevents header spoofing
             self.trusted_proxy_networks = []
@@ -590,6 +596,20 @@ class Server:
         g.start_time = time.time()
         # Generate UUIDv7 for request tracking (RFC 9562 compliant, time-sortable)
         g.request_id = str(uuid_utils.uuid7())
+
+        # Check for missing X-Forwarded-For when ProxyFix is enabled (one-time warning)
+        if self.proxyfix_enabled and not self.warned_missing_xff:
+            xff_header = request.headers.get("X-Forwarded-For")
+            if not xff_header:
+                self.logger.error(
+                    "PROXY CONFIGURATION ERROR: ProxyFix is enabled but no X-Forwarded-For header "
+                    "received! This means your load balancer/ingress is NOT sending the real client IP. "
+                    f"You will see Docker/proxy IPs (like {request.remote_addr}) instead of real clients. "
+                    "Configure your load balancer to add X-Forwarded-For headers. "
+                    "Examples: nginx 'proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' "
+                    "or Traefik '--entryPoints.web.forwardedHeaders.insecure=true'"
+                )
+                self.warned_missing_xff = True  # Only warn once to prevent log spam
 
         # Return 414 URI Too Long if URL exceeds limit (after logging above)
         if url_length > self.max_url_length:
