@@ -154,13 +154,15 @@ class Server:
         Examples:
             TRUSTED_PROXIES="10.0.0.1" - Trust single IP (auto-converted to 10.0.0.1/32)
             TRUSTED_PROXIES="10.0.0.0/24" - Trust CIDR range
-            TRUSTED_PROXIES="0.0.0.0/0,::/0" - Trust all proxies (trust-all mode)
+            TRUSTED_PROXIES="0.0.0.0/0,::/0" - Trust all IPs, use PROXY_DEPTH for hop count
+            PROXY_DEPTH=1 - Number of proxy hops (default: 1)
             TRUST_ALL_PROXIES=true - Trust all proxies (DANGEROUS - use only in dev)
         """
         import ipaddress
 
         trust_all = bool(os.getenv("TRUST_ALL_PROXIES", "false").lower() in ["true", "1", "yes"])
         trusted_proxies_str = os.getenv("TRUSTED_PROXIES", "")
+        proxy_depth_str = os.getenv("PROXY_DEPTH", "")
 
         self.logger.info(
             f"[PROXY_DEBUG] Starting proxy configuration: "
@@ -206,38 +208,73 @@ class Server:
         if trusted_networks:
             self.logger.info(f"[PROXY_DEBUG] Networks: {[str(net) for net in trusted_networks]}")
 
+        # Determine proxy depth (number of hops to traverse in X-Forwarded-For chain)
+        proxy_depth = 1  # Default to 1 hop (most common: single load balancer)
+
+        # Parse PROXY_DEPTH if provided
+        if proxy_depth_str:
+            try:
+                proxy_depth = int(proxy_depth_str)
+                if proxy_depth < 1 or proxy_depth > 100:
+                    self.logger.error(
+                        f"Invalid PROXY_DEPTH={proxy_depth_str}. Must be 1-100. Using default: 1"
+                    )
+                    proxy_depth = 1
+                else:
+                    self.logger.info(f"[PROXY_DEBUG] Using explicit PROXY_DEPTH={proxy_depth}")
+            except ValueError:
+                self.logger.error(
+                    f"Invalid PROXY_DEPTH={proxy_depth_str}. Must be an integer. Using default: 1"
+                )
+                proxy_depth = 1
+
         # Check if trust-all ranges are present (0.0.0.0/0 or ::/0)
         if trusted_networks and any(str(net) in ["0.0.0.0/0", "::/0"] for net in trusted_networks):
             self.logger.info(
                 f"[PROXY_DEBUG] Detected trust-all CIDR ranges in TRUSTED_PROXIES ({trusted_proxies_str}). "
-                "Enabling trust-all proxy mode."
+                f"Using PROXY_DEPTH={proxy_depth} for X-Forwarded-For processing."
             )
-            trust_all = True
-
-        if trust_all:
-            # Trust all proxies by setting x_for to a high value
+            self.app.wsgi_app = ProxyFix(
+                self.app.wsgi_app, x_for=proxy_depth, x_proto=1, x_host=1, x_port=1, x_prefix=1
+            )
+            self.proxyfix_enabled = True
+            self.logger.info(
+                f"[PROXY_DEBUG] ProxyFix middleware installed with x_for={proxy_depth}"
+            )
+        elif trust_all:
+            # Legacy TRUST_ALL_PROXIES=true (use explicit depth or default to 1)
             self.logger.warning(
-                "[PROXY_DEBUG] TRUST_ALL_PROXIES enabled - Trusting up to 100 proxy hops. "
+                f"[PROXY_DEBUG] TRUST_ALL_PROXIES=true - Using PROXY_DEPTH={proxy_depth}. "
                 "This should ONLY be used when behind trusted infrastructure."
             )
             self.app.wsgi_app = ProxyFix(
-                self.app.wsgi_app, x_for=100, x_proto=1, x_host=1, x_port=1, x_prefix=1
+                self.app.wsgi_app, x_for=proxy_depth, x_proto=1, x_host=1, x_port=1, x_prefix=1
             )
             self.proxyfix_enabled = True
-            self.logger.info("[PROXY_DEBUG] ProxyFix middleware installed with x_for=100")
+            self.logger.info(
+                f"[PROXY_DEBUG] ProxyFix middleware installed with x_for={proxy_depth}"
+            )
         elif trusted_networks:
             # Store trusted networks for validation and enable ProxyFix with correct depth
-            # x_for should match the number of trusted proxy hops
             self.trusted_proxy_networks = trusted_networks
-            num_proxies = len(trusted_networks)
-            self.logger.info(
-                f"ProxyFix enabled: Trusting {num_proxies} proxy hop(s) from network(s): "
-                f"{[str(net) for net in trusted_networks]}"
-            )
-            # Use x_for=num_proxies to process the correct number of X-Forwarded-For entries
+
+            # Use explicit PROXY_DEPTH if provided, otherwise default to 1
+            if not proxy_depth_str:
+                # No explicit depth - use default of 1 (single proxy/load balancer)
+                proxy_depth = 1
+                self.logger.info(
+                    f"ProxyFix enabled: Trusting network(s) {[str(net) for net in trusted_networks]} "
+                    f"with default PROXY_DEPTH={proxy_depth}. Set PROXY_DEPTH env var if you have multiple proxies."
+                )
+            else:
+                self.logger.info(
+                    f"ProxyFix enabled: Trusting network(s) {[str(net) for net in trusted_networks]} "
+                    f"with PROXY_DEPTH={proxy_depth}"
+                )
+
             self.app.wsgi_app = ProxyFix(
                 self.app.wsgi_app,
-                x_for=num_proxies,
+                x_for=proxy_depth,
                 x_proto=1,
                 x_host=1,
                 x_port=1,
@@ -604,8 +641,11 @@ class Server:
         g.request_id = str(uuid_utils.uuid7())
 
         # Check for missing X-Forwarded-For when ProxyFix is enabled (one-time warning)
+        # NOTE: We check the environ dict because ProxyFix consumes and removes X-Forwarded-For
+        # from request.headers after processing it. The raw header is in request.environ.
         if self.proxyfix_enabled and not self.warned_missing_xff:
-            xff_header = request.headers.get("X-Forwarded-For")
+            # ProxyFix stores original headers in environ with HTTP_ prefix
+            xff_header = request.environ.get("HTTP_X_FORWARDED_FOR")
             if not xff_header:
                 self.logger.error(
                     "PROXY CONFIGURATION ERROR: ProxyFix is enabled but no X-Forwarded-For header "
