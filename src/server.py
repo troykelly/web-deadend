@@ -322,13 +322,17 @@ class Server:
             self.gelf_queue = queue.Queue(maxsize=10000)
 
             # Start background worker thread for async GELF logging
+            # Use daemon=True in test mode to prevent pytest hanging
+            is_testing = bool(os.getenv("TESTING") or self.app.config.get("TESTING"))
             self.gelf_worker_thread = threading.Thread(
                 target=self._gelf_worker,
-                daemon=False,  # Non-daemon for graceful shutdown
+                daemon=is_testing,  # Daemon in tests, non-daemon in production for graceful shutdown
                 name="gelf-logger",
             )
             self.gelf_worker_thread.start()
-            self.logger.info("Async GELF logging enabled with queue size 10000")
+            self.logger.info(
+                f"Async GELF logging enabled with queue size 10000 (daemon={is_testing})"
+            )
         else:
             self.logger.warning("No GELF server specified; GELF handler not set up")
             self.gelf_logger = None
@@ -423,8 +427,10 @@ class Server:
             self.logger.warning(f"Invalid LOG_FORMAT '{self.log_format}', defaulting to 'json'")
             self.log_format = "json"
 
+        # Use daemon=True in test mode to prevent pytest hanging
+        is_testing = bool(os.getenv("TESTING") or self.app.config.get("TESTING"))
         self.stats_worker_thread = threading.Thread(
-            target=self._stats_worker, daemon=False, name="stats-logger"
+            target=self._stats_worker, daemon=is_testing, name="stats-logger"
         )
         self.stats_worker_thread.start()
         self.logger.info(
