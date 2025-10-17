@@ -43,7 +43,7 @@ class TestStatsLogging:
                 server.stats_shutdown_event.set()
                 server.stats_worker_thread.join(timeout=2)
 
-    @patch.dict("os.environ", {"LOG_FORMAT": "invalid"})
+    @patch.dict("os.environ", {"LOG_FORMAT": "invalid", "TESTING": "true"})
     def test_log_format_invalid_defaults_to_json(self):
         """Test that invalid log format defaults to JSON."""
         from src.server import Server

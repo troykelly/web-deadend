@@ -14,7 +14,7 @@ class TestHealthcheckFiltering:
         assert response.status_code == 200
         assert response.json == {"service": "ok"}
 
-    @patch.dict("os.environ", {"HEALTHCHECK_ALLOWED": "127.0.0.1/32"})
+    @patch.dict("os.environ", {"HEALTHCHECK_ALLOWED": "127.0.0.1/32", "TESTING": "true"})
     def test_healthcheck_allows_specific_ip(self):
         """Test healthcheck allows specific IP."""
         from src.server import Server
@@ -24,7 +24,7 @@ class TestHealthcheckFiltering:
         # Check that 127.0.0.1 is allowed
         assert server._is_healthcheck_allowed("127.0.0.1") is True
 
-    @patch.dict("os.environ", {"HEALTHCHECK_ALLOWED": "127.0.0.1/32"})
+    @patch.dict("os.environ", {"HEALTHCHECK_ALLOWED": "127.0.0.1/32", "TESTING": "true"})
     def test_healthcheck_denies_other_ip(self):
         """Test healthcheck denies IPs not in allowed list."""
         from src.server import Server
@@ -35,7 +35,7 @@ class TestHealthcheckFiltering:
         assert server._is_healthcheck_allowed("192.168.1.1") is False
         assert server._is_healthcheck_allowed("10.0.0.1") is False
 
-    @patch.dict("os.environ", {"HEALTHCHECK_ALLOWED": "192.168.1.0/24"})
+    @patch.dict("os.environ", {"HEALTHCHECK_ALLOWED": "192.168.1.0/24", "TESTING": "true"})
     def test_healthcheck_allows_subnet(self):
         """Test healthcheck allows entire subnet."""
         from src.server import Server
