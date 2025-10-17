@@ -13,7 +13,7 @@ from src.server import Server
 
 
 @pytest.fixture
-def app():
+def app(set_test_env):
     """Create and configure a test Flask application instance."""
     with patch("src.server.graypy"):  # Mock GELF to avoid network calls
         server = Server()
@@ -125,6 +125,7 @@ def set_test_env(monkeypatch, sample_responses_yaml):
     """Set environment variables for testing."""
     monkeypatch.setenv("RESPONSES_FILE", sample_responses_yaml)
     monkeypatch.setenv("DEBUG_LEVEL", "DEBUG")
+    monkeypatch.setenv("TESTING", "true")  # Disable stats worker in tests
     # Don't set GELF_SERVER to avoid network calls in tests
     monkeypatch.delenv("GELF_SERVER", raising=False)
 

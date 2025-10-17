@@ -27,9 +27,11 @@ class TestStatsLogging:
             server = app.config["SERVER_INSTANCE"]
             assert server.log_format == "json"
 
-    @patch.dict("os.environ", {"LOG_FORMAT": "text"})
-    def test_log_format_text(self):
+    @patch.dict("os.environ", {}, clear=True)
+    def test_log_format_text(self, monkeypatch):
         """Test text log format configuration."""
+        monkeypatch.setenv("LOG_FORMAT", "text")
+
         from src.server import Server
 
         server = Server()
@@ -43,17 +45,21 @@ class TestStatsLogging:
         server = Server()
         assert server.log_format == "json"
 
-    @patch.dict("os.environ", {"LOG_STATS_INTERVAL": "30"})
-    def test_custom_stats_interval(self):
+    @patch.dict("os.environ", {}, clear=True)
+    def test_custom_stats_interval(self, monkeypatch):
         """Test custom stats interval configuration."""
+        monkeypatch.setenv("LOG_STATS_INTERVAL", "30")
+
         from src.server import Server
 
         server = Server()
         assert server.log_stats_interval == 30
 
-    @patch.dict("os.environ", {"LOG_HEARTBEAT_INTERVAL": "7200"})
-    def test_custom_heartbeat_interval(self):
+    @patch.dict("os.environ", {}, clear=True)
+    def test_custom_heartbeat_interval(self, monkeypatch):
         """Test custom heartbeat interval configuration."""
+        monkeypatch.setenv("LOG_HEARTBEAT_INTERVAL", "7200")
+
         from src.server import Server
 
         server = Server()
@@ -139,11 +145,15 @@ class TestStatsLogging:
         assert server.total_bytes_received >= initial_received
         assert server.total_bytes_sent >= initial_sent
 
-    def test_log_stats_json_format(self, app, caplog):
+    def test_log_stats_json_format(self, app, caplog, monkeypatch):
         """Test JSON format stats logging."""
+        # Temporarily allow stats logging for this test
+        monkeypatch.delenv("TESTING", raising=False)
+
         with app.app_context():
             server = app.config["SERVER_INSTANCE"]
             server.log_format = "json"
+            server.app.config["TESTING"] = False  # Bypass test mode check
 
             stats = {
                 "requests_per_minute": 100,
@@ -169,11 +179,15 @@ class TestStatsLogging:
             assert log_data["service"] == "web-deadend"
             assert "version" in log_data
 
-    def test_log_stats_text_format(self, app, caplog):
+    def test_log_stats_text_format(self, app, caplog, monkeypatch):
         """Test text format stats logging."""
+        # Temporarily allow stats logging for this test
+        monkeypatch.delenv("TESTING", raising=False)
+
         with app.app_context():
             server = app.config["SERVER_INSTANCE"]
             server.log_format = "text"
+            server.app.config["TESTING"] = False  # Bypass test mode check
 
             stats = {
                 "requests_per_minute": 100,
@@ -198,11 +212,15 @@ class TestStatsLogging:
             assert "1024↓" in log_message
             assert "2048↑" in log_message
 
-    def test_log_stats_heartbeat_indicator(self, app, caplog):
+    def test_log_stats_heartbeat_indicator(self, app, caplog, monkeypatch):
         """Test heartbeat indicator in logs."""
+        # Temporarily allow stats logging for this test
+        monkeypatch.delenv("TESTING", raising=False)
+
         with app.app_context():
             server = app.config["SERVER_INSTANCE"]
             server.log_format = "text"
+            server.app.config["TESTING"] = False  # Bypass test mode check
 
             stats = {
                 "requests_per_minute": 0,
@@ -250,9 +268,12 @@ class TestStatsLogging:
             assert stats1["requests_per_minute"] == stats2["requests_per_minute"]
             assert stats1["unique_ips"] == stats2["unique_ips"]
 
-    @patch.dict("os.environ", {"LOG_STATS_INTERVAL": "1"})
-    def test_stats_worker_logs_on_change(self, caplog):
+    @patch.dict("os.environ", {"LOG_STATS_INTERVAL": "1"}, clear=False)
+    def test_stats_worker_logs_on_change(self, caplog, monkeypatch):
         """Test that stats worker logs when stats change."""
+        # Clear TESTING env var to enable stats worker
+        monkeypatch.delenv("TESTING", raising=False)
+
         from src.server import Server
 
         server = Server()
@@ -265,19 +286,23 @@ class TestStatsLogging:
         # So we just verify the thread is working
         assert server.stats_worker_thread.is_alive()
 
-    def test_stats_worker_shutdown(self, app):
+    def test_stats_worker_shutdown(self, monkeypatch):
         """Test stats worker thread shutdown."""
-        with app.app_context():
-            server = app.config["SERVER_INSTANCE"]
+        # Clear TESTING env var to enable stats worker
+        monkeypatch.delenv("TESTING", raising=False)
 
-            # Thread should be running
-            assert server.stats_worker_thread.is_alive()
+        from src.server import Server
 
-            # Signal shutdown
-            server.stats_shutdown_event.set()
+        server = Server()
 
-            # Give thread time to shutdown
-            server.stats_worker_thread.join(timeout=2)
+        # Thread should be running
+        assert server.stats_worker_thread.is_alive()
 
-            # Thread should have stopped
-            assert not server.stats_worker_thread.is_alive()
+        # Signal shutdown
+        server.stats_shutdown_event.set()
+
+        # Give thread time to shutdown
+        server.stats_worker_thread.join(timeout=2)
+
+        # Thread should have stopped
+        assert not server.stats_worker_thread.is_alive()
