@@ -226,16 +226,22 @@ class Server:
             self.proxyfix_enabled = True
             self.logger.info("[PROXY_DEBUG] ProxyFix middleware installed with x_for=100")
         elif trusted_networks:
-            # Store trusted networks for validation and enable ProxyFix with depth 1
-            # The actual validation happens per-request basis
+            # Store trusted networks for validation and enable ProxyFix with correct depth
+            # x_for should match the number of trusted proxy hops
             self.trusted_proxy_networks = trusted_networks
+            num_proxies = len(trusted_networks)
             self.logger.info(
-                f"ProxyFix enabled: Trusting proxies from {len(trusted_networks)} network(s): "
+                f"ProxyFix enabled: Trusting {num_proxies} proxy hop(s) from network(s): "
                 f"{[str(net) for net in trusted_networks]}"
             )
-            # Use x_for=1 since we're validating proxies ourselves
+            # Use x_for=num_proxies to process the correct number of X-Forwarded-For entries
             self.app.wsgi_app = ProxyFix(
-                self.app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1
+                self.app.wsgi_app,
+                x_for=num_proxies,
+                x_proto=1,
+                x_host=1,
+                x_port=1,
+                x_prefix=1,
             )
             self.proxyfix_enabled = True
         else:
