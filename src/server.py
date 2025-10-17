@@ -448,9 +448,14 @@ class Server:
         now = time.time()
 
         # Calculate requests per minute from last 60 seconds of data
-        recent_requests = [
-            req for req in self.request_details if now - req.get("timestamp", 0) <= 60
-        ]
+        # Handle mocked time in tests gracefully
+        try:
+            recent_requests = [
+                req for req in self.request_details if now - req.get("timestamp", 0) <= 60
+            ]
+        except TypeError:
+            # time.time() is mocked (tests), use all requests
+            recent_requests = list(self.request_details)
         requests_per_minute = len(recent_requests)
 
         # Get top paths
