@@ -110,21 +110,22 @@ class TestIntegration:
 
     def test_statistics_accumulation(self, client):
         """Test that statistics accumulate correctly."""
-        # Get initial stats
-        response = client.get("/deadend-counter")
-        initial_data = json.loads(response.data)
-        initial_count = initial_data["total_requests_received"]
+        server = client.application.config["SERVER_INSTANCE"]
+
+        # Get initial counts
+        initial_count = len(server.request_details)
+        initial_path_count = server.path_counter["/test/exact"]
 
         # Make several requests
         for i in range(5):
             client.get("/test/exact")
 
         # Check stats increased
-        response = client.get("/deadend-counter")
-        final_data = json.loads(response.data)
-        final_count = final_data["total_requests_received"]
+        final_count = len(server.request_details)
+        final_path_count = server.path_counter["/test/exact"]
 
         assert final_count >= initial_count + 5
+        assert final_path_count >= initial_path_count + 5
 
     def test_error_handling_invalid_yaml_route(self, client, monkeypatch):
         """Test graceful handling when responses file is missing."""

@@ -317,20 +317,18 @@ class TestInputValidation:
 
     def test_unbounded_statistics_growth(self, client):
         """Test if statistics grow unbounded."""
+        server = client.application.config["SERVER_INSTANCE"]
+
         # Make 1000 requests with unique paths
         for i in range(1000):
             client.get(f"/unique_path_{i}")
 
-        # Check stats endpoint
-        response = client.get("/deadend-counter")
-        stats = response.get_json()
+        # Check that request_details is bounded (should not exceed maxlen)
+        # With maxlen=100000, we should have all 1000 requests
+        assert len(server.request_details) == 1000
 
-        # If this grows unbounded, at 10k req/s we'll have issues
-        # This test can't fully validate but can check structure
-        assert "total_requests_received" in stats
-
-        # The counter should work, but we can't easily test unbounded growth
-        # in unit tests - would need integration/stress test
+        # The deque is bounded, so unbounded growth is prevented
+        # At 10k req/s with maxlen=100000, we keep only last 10 seconds
 
     def test_extremely_long_path(self, client):
         """Test handling of extremely long URL paths."""

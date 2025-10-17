@@ -18,6 +18,7 @@ def app():
     with patch("src.server.graypy"):  # Mock GELF to avoid network calls
         server = Server()
         server.app.config["TESTING"] = True
+        server.app.config["SERVER_INSTANCE"] = server  # Store server instance for tests
         yield server.app
 
 

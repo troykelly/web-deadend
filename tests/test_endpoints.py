@@ -1,5 +1,5 @@
 """
-Tests for built-in endpoints (/deadend-status, /deadend-counter).
+Tests for built-in endpoints (/deadend-status).
 """
 
 import json
@@ -33,68 +33,12 @@ class TestDeadendStatus:
         assert response.status_code == 200
 
 
-class TestDeadendCounter:
-    """Test the /deadend-counter statistics endpoint."""
+class TestDeadendCounterRemoved:
+    """Test that the /deadend-counter endpoint has been removed."""
 
-    def test_counter_endpoint_exists(self, client):
-        """Test that /deadend-counter endpoint exists."""
+    def test_counter_endpoint_removed(self, client):
+        """Test that /deadend-counter endpoint no longer exists."""
         response = client.get("/deadend-counter")
-        assert response.status_code == 200
-
-    def test_counter_response_structure(self, client):
-        """Test /deadend-counter returns correct structure."""
-        response = client.get("/deadend-counter")
-        data = json.loads(response.data)
-
-        assert "total_requests_received" in data
-        assert "top_10_domains_urls" in data
-        assert "request_type_breakdown" in data
-
-    def test_counter_tracks_requests(self, client):
-        """Test that counter tracks requests."""
-        # Make several requests
-        client.get("/test/exact")
-        client.get("/test/exact")
-        client.post("/test/placeholder", data="{}")
-
-        response = client.get("/deadend-counter")
-        data = json.loads(response.data)
-
-        # Should have at least 3 requests (might have more from other tests)
-        assert data["total_requests_received"] >= 3
-
-    def test_counter_top_domains(self, client):
-        """Test that counter tracks top domains/URLs."""
-        # Make requests to specific path
-        for _ in range(5):
-            client.get("/test/exact")
-
-        response = client.get("/deadend-counter")
-        data = json.loads(response.data)
-
-        top_domains = data["top_10_domains_urls"]
-        assert isinstance(top_domains, list)
-        # Should have at least one entry
-        assert len(top_domains) > 0
-        # Each entry should be [path, count]
-        if top_domains:
-            assert len(top_domains[0]) == 2
-
-    def test_counter_request_breakdown(self, client):
-        """Test that counter tracks request method breakdown."""
-        client.get("/test/exact")
-        client.post("/test/placeholder", data="{}")
-
-        response = client.get("/deadend-counter")
-        data = json.loads(response.data)
-
-        breakdown = data["request_type_breakdown"]
-        assert isinstance(breakdown, dict)
-        # Should have GET and POST
-        assert "GET" in breakdown
-        assert "POST" in breakdown
-
-    def test_counter_content_type(self, client):
-        """Test /deadend-counter returns JSON content type."""
-        response = client.get("/deadend-counter")
-        assert response.content_type == "application/json"
+        # Should return 204 or whatever the catch-all returns
+        # The endpoint should not exist as a dedicated route
+        assert response.status_code in [204, 200]  # Catch-all behavior

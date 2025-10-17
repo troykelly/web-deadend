@@ -3,8 +3,7 @@ Server module for handling incoming requests using Flask.
 """
 
 import base64
-
-# import ipaddress  # noqa: F401
+import ipaddress
 import json
 import logging
 import os
@@ -13,7 +12,7 @@ import threading
 import time
 from collections import Counter, deque
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Union
 from urllib.parse import parse_qs, urlparse  # urlencode unused
 
 import defusedxml.ElementTree as ET
@@ -47,15 +46,29 @@ class Server:
         self.gelf_queue: Optional[queue.Queue] = None
         self.gelf_worker_thread: Optional[threading.Thread] = None
 
+        # Stats logging thread
+        self.stats_worker_thread: Optional[threading.Thread] = None
+        self.stats_shutdown_event = threading.Event()
+
+        # Stats tracking for periodic logging
+        self.unique_ips: Set[str] = set()
+        self.path_counter: Counter[str] = Counter()
+        self.error_counter: Counter[int] = Counter()
+        self.total_bytes_received: int = 0
+        self.total_bytes_sent: int = 0
+        self.last_stats: Dict[str, Any] = {}
+        self.last_heartbeat_time: float = time.time()
+
         self._setup_logging()
         self._setup_proxy_fix()
         self._setup_gelf_handler()
+        self._setup_healthcheck_allowed()
+        self._setup_stats_worker()
 
         # Flask app configuration
         self.app.before_request(self.before_request)
         self.app.after_request(self.after_request)
         self.app.route("/deadend-status", methods=["GET"])(self.deadend_status)
-        self.app.route("/deadend-counter", methods=["GET"])(self.deadend_counter)
         self.app.route("/", defaults={"path": ""}, methods=self.all_methods())(self.catch_all)
         self.app.route("/<path:path>", methods=self.all_methods())(self.catch_all)
 
@@ -163,6 +176,140 @@ class Server:
                 self.logger.error(f"Error in GELF worker thread: {e}")
                 continue
 
+    def _setup_healthcheck_allowed(self) -> None:
+        """Parse HEALTHCHECK_ALLOWED environment variable for IP filtering."""
+        allowed_str = os.getenv("HEALTHCHECK_ALLOWED", "0.0.0.0/0,::/0")
+        self.healthcheck_allowed_networks: List[
+            Union[ipaddress.IPv4Network, ipaddress.IPv6Network]
+        ] = []
+
+        for network_str in allowed_str.split(","):
+            network_str = network_str.strip()
+            if not network_str:
+                continue
+            try:
+                network = ipaddress.ip_network(network_str, strict=False)
+                self.healthcheck_allowed_networks.append(network)
+            except ValueError as e:
+                self.logger.error(f"Invalid network in HEALTHCHECK_ALLOWED: {network_str} - {e}")
+
+        if not self.healthcheck_allowed_networks:
+            # Default to allow all if no valid networks
+            self.healthcheck_allowed_networks = [
+                ipaddress.ip_network("0.0.0.0/0"),
+                ipaddress.ip_network("::/0"),
+            ]
+            self.logger.warning("No valid networks in HEALTHCHECK_ALLOWED, defaulting to allow all")
+
+    def _is_healthcheck_allowed(self, ip_str: str) -> bool:
+        """Check if an IP address is allowed to access healthcheck endpoint."""
+        try:
+            ip = ipaddress.ip_address(ip_str)
+            for network in self.healthcheck_allowed_networks:
+                if ip in network:
+                    return True
+            return False
+        except ValueError:
+            self.logger.warning(f"Invalid IP address for healthcheck: {ip_str}")
+            return False
+
+    def _setup_stats_worker(self) -> None:
+        """Start the background stats logging thread."""
+        self.log_format = os.getenv("LOG_FORMAT", "json").lower()
+        self.log_stats_interval = int(os.getenv("LOG_STATS_INTERVAL", "60"))
+        self.log_heartbeat_interval = int(os.getenv("LOG_HEARTBEAT_INTERVAL", "3600"))
+
+        if self.log_format not in ["json", "text"]:
+            self.logger.warning(f"Invalid LOG_FORMAT '{self.log_format}', defaulting to 'json'")
+            self.log_format = "json"
+
+        self.stats_worker_thread = threading.Thread(
+            target=self._stats_worker, daemon=True, name="stats-logger"
+        )
+        self.stats_worker_thread.start()
+        self.logger.info(
+            f"Stats logging enabled (format={self.log_format}, "
+            f"interval={self.log_stats_interval}s, heartbeat={self.log_heartbeat_interval}s)"
+        )
+
+    def _stats_worker(self) -> None:
+        """Background worker that logs stats periodically."""
+        while not self.stats_shutdown_event.is_set():
+            try:
+                # Wait for the stats interval
+                self.stats_shutdown_event.wait(timeout=self.log_stats_interval)
+
+                if self.stats_shutdown_event.is_set():
+                    break
+
+                # Calculate stats
+                current_stats = self._calculate_stats()
+                current_time = time.time()
+
+                # Check if stats changed or if it's time for heartbeat
+                stats_changed = current_stats != self.last_stats
+                heartbeat_due = (
+                    current_time - self.last_heartbeat_time
+                ) >= self.log_heartbeat_interval
+
+                if stats_changed or heartbeat_due:
+                    self._log_stats(current_stats, heartbeat=heartbeat_due and not stats_changed)
+                    self.last_stats = current_stats.copy()
+
+                    if heartbeat_due:
+                        self.last_heartbeat_time = current_time
+
+            except Exception as e:
+                self.logger.error(f"Error in stats worker thread: {e}")
+                continue
+
+    def _calculate_stats(self) -> Dict[str, Any]:
+        """Calculate current statistics."""
+        now = time.time()
+
+        # Calculate requests per minute from last 60 seconds of data
+        recent_requests = [
+            req for req in self.request_details if now - req.get("timestamp", 0) <= 60
+        ]
+        requests_per_minute = len(recent_requests)
+
+        # Get top paths
+        top_paths = dict(self.path_counter.most_common(10))
+
+        # Get error breakdown
+        errors = dict(self.error_counter)
+
+        return {
+            "requests_per_minute": requests_per_minute,
+            "total_requests": len(self.request_details),
+            "unique_ips": len(self.unique_ips),
+            "top_paths": top_paths,
+            "bytes_received": self.total_bytes_received,
+            "bytes_sent": self.total_bytes_sent,
+            "errors": errors,
+            "timestamp": now,
+        }
+
+    def _log_stats(self, stats: Dict[str, Any], heartbeat: bool = False) -> None:
+        """Log statistics in the configured format."""
+        if self.log_format == "json":
+            stats_copy = stats.copy()
+            stats_copy["heartbeat"] = heartbeat
+            stats_copy["service"] = "web-deadend"
+            stats_copy["version"] = VERSION
+            self.logger.info(json.dumps(stats_copy))
+        else:  # text format
+            prefix = "[HEARTBEAT] " if heartbeat else "[STATS] "
+            msg = (
+                f"{prefix}Requests/min: {stats['requests_per_minute']}, "
+                f"Unique IPs: {stats['unique_ips']}, "
+                f"Total requests: {stats['total_requests']}, "
+                f"Traffic: {stats['bytes_received']}↓ / {stats['bytes_sent']}↑ bytes"
+            )
+            if stats["errors"]:
+                msg += f", Errors: {stats['errors']}"
+            self.logger.info(msg)
+
     def before_request(self) -> None:
         """Store the start time and generate request ID before processing the request."""
         g.start_time = time.time()
@@ -181,12 +328,31 @@ class Server:
         request_data = self._gather_request_data(response, request_duration)
         self.logger.debug(json.dumps(request_data))
         self.request_counter.update([request.path])
+
+        # Track stats for periodic logging
+        remote_ip = request.remote_addr or "unknown"
+        self.unique_ips.add(remote_ip)
+        self.path_counter[request.path] += 1
+
+        # Track errors
+        if response.status_code >= 400:
+            self.error_counter[response.status_code] += 1
+
+        # Track traffic
+        request_size = (
+            request.content_length if request.content_length is not None else len(request.data)
+        )
+        response_size = response.calculate_content_length() or 0
+        self.total_bytes_received += request_size
+        self.total_bytes_sent += response_size
+
         self.request_details.append(
             {
                 "method": request.method,
                 "path": request.path,
                 "query_params": request.args.to_dict(),
                 "domain": request.host,
+                "timestamp": time.time(),
             }
         )
 
@@ -397,20 +563,15 @@ class Server:
                 self.logger.error("Error queueing GELF data: %s", e)
 
     def deadend_status(self):
-        """Endpoint to return service status."""
+        """Endpoint to return service status with IP filtering."""
+        remote_ip = request.remote_addr or "unknown"
+
+        if not self._is_healthcheck_allowed(remote_ip):
+            self.logger.warning(f"Healthcheck denied from {remote_ip}")
+            # Return 204 No Content to avoid revealing endpoint existence
+            return "", 204
+
         return jsonify({"service": "ok"}), 200
-
-    def deadend_counter(self):
-        """Endpoint to return request statistics."""
-        top_domains = self.request_counter.most_common(10)
-        request_breakdown = Counter(req["method"] for req in self.request_details)
-
-        response_data = {
-            "total_requests_received": sum(self.request_counter.values()),
-            "top_10_domains_urls": top_domains,
-            "request_type_breakdown": request_breakdown,
-        }
-        return jsonify(response_data), 200
 
     def catch_all(self, path: str) -> Response:
         """Catch-all endpoint to handle all requests that are not explicitly defined."""
