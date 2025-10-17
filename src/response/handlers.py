@@ -1,6 +1,7 @@
 # src/response/handlers.py
 
 import base64
+import hashlib
 import logging
 import os
 import time
@@ -15,6 +16,24 @@ from response.utils import route_matches_url, safe_ip
 
 logger = logging.getLogger(__name__)
 
+
+def _md5_filter(value: str) -> str:
+    """Jinja2 filter to compute MD5 hash of a string.
+
+    Args:
+        value: String to hash
+
+    Returns:
+        Lowercase hexadecimal MD5 hash (32 characters)
+
+    Example:
+        {{ "hello" | md5 }} -> "5d41402abc4b2a76b9719d911017c592"
+    """
+    if not isinstance(value, str):
+        value = str(value)
+    return hashlib.md5(value.encode("utf-8")).hexdigest()
+
+
 # Create a sandboxed Jinja2 environment for secure template rendering
 # This prevents template injection attacks (SSTI) by restricting dangerous operations
 _jinja_env = SandboxedEnvironment(
@@ -22,6 +41,8 @@ _jinja_env = SandboxedEnvironment(
 )
 # Clear global namespace to prevent access to builtins
 _jinja_env.globals.clear()
+# Add custom filters
+_jinja_env.filters["md5"] = _md5_filter
 
 
 def set_logger(target_logger: logging.Logger) -> None:
@@ -73,7 +94,8 @@ def generate_response(
     template = _jinja_env.from_string(body_template)
     rendered: str = template.render(
         request=context,
-        matched=path_variables,
+        matched=path_variables,  # Legacy: kept for backwards compatibility
+        path=path_variables,  # Path segment variables extracted from route
         body=body_obj or {},
         query=query_obj or {},
         requestdata=requestdata,

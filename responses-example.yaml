@@ -66,3 +66,36 @@
         "encoded_request_data": "{{ requestdata }}",
         "note": "This demonstrates access to structured body and query objects"
       }
+# Example demonstrating MD5 filter for checksums
+"/api/file/{filename}":
+  "GET":
+    "mediatype": "application/json"
+    "base64": False
+    "responsestatus": 200
+    "body": |
+      {
+        "filename": "{{ path.filename }}",
+        "download_url": "{{ request.protocol }}://{{ request.host }}/downloads/{{ path.filename }}",
+        "checksum": "{{ path.filename | md5 }}",
+        "request_checksum": "{{ request.id | md5 }}",
+        "note": "MD5 filter can hash any string value"
+      }
+# Example demonstrating percent wildcards (%WILDCARD%)
+"/reporting/%ORIGINALREQUESTID%/ping.txt":
+  "GET":
+    "mediatype": "text/plain"
+    "base64": False
+    "responsestatus": 200
+    "body": "hello - request {{ path.ORIGINALREQUESTID }}"
+# Example with multiple percent wildcards
+"/users/%USERID%/files/%FILENAME%":
+  "GET":
+    "mediatype": "application/json"
+    "base64": False
+    "responsestatus": 200
+    "body": |
+      {
+        "user_id": "{{ path.USERID }}",
+        "filename": "{{ path.FILENAME }}",
+        "download_url": "{{ request.protocol }}://{{ request.host }}/cdn/{{ path.USERID }}/{{ path.FILENAME }}"
+      }

@@ -91,8 +91,8 @@ def route_matches_url(route: str, url: str) -> Optional[Dict[str, str]]:
 
     Supported wildcards:
     - {varname} - Placeholder syntax for path variables
-    - %IP% - Matches safe IP format (e.g., 192_168_1_100, 2001_db8__1)
-    - %EPOCH% - Matches Unix epoch timestamp (numeric digits)
+    - %WILDCARD% - Generic wildcard that matches any path segment
+      Examples: %IP%, %EPOCH%, %ORIGINALREQUESTID%, %FILENAME%, etc.
     """
     logger.debug(f"Matching route: {route} with URL: {url}")
 
@@ -100,28 +100,23 @@ def route_matches_url(route: str, url: str) -> Optional[Dict[str, str]]:
     if route == url:
         return {}
 
-    # Percent wildcard match (%IP%, %EPOCH%)
-    if "%IP%" in route or "%EPOCH%" in route:
+    # Percent wildcard match (%ANYTHING%)
+    # Match any %WILDCARD% pattern
+    if "%" in route:
         parts = route.split("/")
         url_parts = url.split("/")
         if len(parts) != len(url_parts):
             return None
         path_variables = {}
         for p, u in zip(parts, url_parts):
-            if p == "%IP%":
-                # %IP% matches safe IP format: underscores and alphanumeric
-                # Valid: 192_168_1_100, 2001_db8__1
-                if re.match(r"^[a-fA-F0-9_]+$", u):
-                    path_variables["IP"] = u
-                else:
-                    return None
-            elif p == "%EPOCH%":
-                # %EPOCH% matches numeric timestamp
-                if re.match(r"^\d+$", u):
-                    path_variables["EPOCH"] = u
-                else:
-                    return None
+            # Check if this part is a %WILDCARD% pattern
+            if p.startswith("%") and p.endswith("%") and len(p) > 2:
+                # Extract the wildcard name (e.g., %IP% -> IP)
+                wildcard_name = p[1:-1]
+                # Store the matched value with the wildcard name as key
+                path_variables[wildcard_name] = u
             elif p != u:
+                # Not a wildcard and doesn't match exactly
                 return None
         return path_variables
 

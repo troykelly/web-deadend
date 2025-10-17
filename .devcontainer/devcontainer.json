@@ -60,7 +60,7 @@
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
 	// "forwardPorts": [],
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "echo 'export PYTHONPATH=./src' >> /home/vscode/.zshrc && echo 'export PATH=$PATH:/home/vscode/.local/bin' >> /home/vscode/.zshrc && pip3 install --user -r requirements-dev.txt"
+	"postCreateCommand": "echo 'export PYTHONPATH=./src' >> /home/vscode/.zshrc && echo 'export PATH=$PATH:/home/vscode/.local/bin' >> /home/vscode/.zshrc && curl -fsSL https://get.pnpm.io/install.sh | sh - && curl -LsSf https://astral.sh/uv/install.sh | sh && pip3 install --user -r requirements-dev.txt"
 	// Configure tool-specific properties.
 	// "customizations": {},
 	// Uncomment to connect as root instead. More info: https://aka.ms/dev-containers-non-root.

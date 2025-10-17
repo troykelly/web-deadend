@@ -68,13 +68,14 @@ class TestRouteMatching:
         result = route_matches_url("/reporting/%IP%/data", "/reporting/2001_db8__1/data")
         assert result == {"IP": "2001_db8__1"}
 
-    def test_percent_wildcard_ip_invalid(self):
-        """Test %IP% wildcard with invalid IP format."""
-        # %IP% should only match alphanumeric and underscores
-        assert route_matches_url("/reporting/%IP%/data", "/reporting/invalid.ip/data") is None
-        assert (
-            route_matches_url("/reporting/%IP%/data", "/reporting/192.168.1.1/data") is None
-        )  # dots not allowed
+    def test_percent_wildcard_ip_any_value(self):
+        """Test %IP% wildcard now matches any value (generic wildcard)."""
+        # %IP% is now a generic wildcard that matches any path segment
+        result = route_matches_url("/reporting/%IP%/data", "/reporting/invalid.ip/data")
+        assert result == {"IP": "invalid.ip"}
+
+        result = route_matches_url("/reporting/%IP%/data", "/reporting/192.168.1.1/data")
+        assert result == {"IP": "192.168.1.1"}
 
     def test_percent_wildcard_epoch(self):
         """Test %EPOCH% wildcard matching."""
@@ -84,10 +85,14 @@ class TestRouteMatching:
         result = route_matches_url("/logs/%EPOCH%", "/logs/0")
         assert result == {"EPOCH": "0"}
 
-    def test_percent_wildcard_epoch_invalid(self):
-        """Test %EPOCH% wildcard with non-numeric value."""
-        assert route_matches_url("/logs/%EPOCH%/file", "/logs/notanumber/file") is None
-        assert route_matches_url("/logs/%EPOCH%/file", "/logs/123abc/file") is None
+    def test_percent_wildcard_epoch_any_value(self):
+        """Test %EPOCH% wildcard now matches any value (generic wildcard)."""
+        # %EPOCH% is now a generic wildcard that matches any path segment
+        result = route_matches_url("/logs/%EPOCH%/file", "/logs/notanumber/file")
+        assert result == {"EPOCH": "notanumber"}
+
+        result = route_matches_url("/logs/%EPOCH%/file", "/logs/123abc/file")
+        assert result == {"EPOCH": "123abc"}
 
     def test_percent_wildcard_combined(self):
         """Test multiple percent wildcards in one route."""
