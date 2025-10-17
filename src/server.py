@@ -142,60 +142,87 @@ class Server:
 
     def _setup_proxy_fix(self) -> None:
         """
-        Configures the ProxyFix middleware based on the depth of trusted proxies.
+        Configures the ProxyFix middleware based on trusted proxy networks.
 
         SECURITY: By default, ProxyFix is NOT enabled to prevent X-Forwarded-* header spoofing.
         Set TRUSTED_PROXIES to enable proxy header processing when behind a load balancer.
 
         Examples:
-            TRUSTED_PROXIES="10.0.0.1" - Trust 1 proxy
-            TRUSTED_PROXIES="10.0.0.1,10.0.0.2" - Trust 2 proxies
+            TRUSTED_PROXIES="10.0.0.1" - Trust single IP (auto-converted to 10.0.0.1/32)
+            TRUSTED_PROXIES="10.0.0.0/24" - Trust CIDR range
+            TRUSTED_PROXIES="0.0.0.0/0,::/0" - Trust all proxies (trust-all mode)
             TRUST_ALL_PROXIES=true - Trust all proxies (DANGEROUS - use only in dev)
         """
+        import ipaddress
+
         trust_all = bool(os.getenv("TRUST_ALL_PROXIES", "false").lower() in ["true", "1", "yes"])
         trusted_proxies_str = os.getenv("TRUSTED_PROXIES", "")
-        trusted_proxies = [
-            proxy.strip() for proxy in trusted_proxies_str.split(",") if proxy.strip()
-        ]
 
-        # Check for common misconfiguration: CIDR notation in TRUSTED_PROXIES
-        if trusted_proxies and any("/" in proxy for proxy in trusted_proxies):
-            self.logger.error(
-                f"Invalid TRUSTED_PROXIES configuration: {trusted_proxies_str}. "
-                "TRUSTED_PROXIES should be comma-separated IP addresses (e.g., '10.0.0.1,10.0.0.2'), "
-                "NOT CIDR ranges. To trust all proxies, use TRUST_ALL_PROXIES=true instead."
+        # Parse CIDR ranges from TRUSTED_PROXIES
+        trusted_networks = []
+        if trusted_proxies_str:
+            for proxy in trusted_proxies_str.split(","):
+                proxy = proxy.strip()
+                if not proxy:
+                    continue
+                try:
+                    # If no CIDR notation, add /32 for IPv4 or /128 for IPv6
+                    if "/" not in proxy:
+                        # Determine if IPv4 or IPv6 and add appropriate suffix
+                        try:
+                            addr = ipaddress.ip_address(proxy)
+                            if isinstance(addr, ipaddress.IPv4Address):
+                                proxy = f"{proxy}/32"
+                            else:
+                                proxy = f"{proxy}/128"
+                        except ValueError:
+                            self.logger.error(f"Invalid IP address in TRUSTED_PROXIES: {proxy}")
+                            continue
+
+                    network = ipaddress.ip_network(proxy, strict=False)
+                    trusted_networks.append(network)
+                except ValueError as e:
+                    self.logger.error(f"Invalid CIDR range in TRUSTED_PROXIES: {proxy} - {e}")
+                    continue
+
+        # Check if trust-all ranges are present (0.0.0.0/0 or ::/0)
+        if trusted_networks and any(str(net) in ["0.0.0.0/0", "::/0"] for net in trusted_networks):
+            self.logger.info(
+                f"Detected trust-all CIDR ranges in TRUSTED_PROXIES ({trusted_proxies_str}). "
+                "Enabling trust-all proxy mode."
             )
-            # Clear the list to prevent ProxyFix from being misconfigured
-            trusted_proxies = []
+            trust_all = True
 
         if trust_all:
             # Trust all proxies by setting x_for to a high value
             self.logger.warning(
-                "TRUST_ALL_PROXIES=true - Trusting up to 100 proxy hops. "
-                "This should ONLY be used in development. In production, use TRUSTED_PROXIES "
-                "instead."
+                "TRUST_ALL_PROXIES enabled - Trusting up to 100 proxy hops. "
+                "This should ONLY be used when behind trusted infrastructure."
             )
             self.app.wsgi_app = ProxyFix(
                 self.app.wsgi_app, x_for=100, x_proto=1, x_host=1, x_port=1, x_prefix=1
             )
-        elif trusted_proxies:
-            # Count the number of proxies and apply ProxyFix
-            num_proxies = len(trusted_proxies)
+        elif trusted_networks:
+            # Store trusted networks for validation and enable ProxyFix with depth 1
+            # The actual validation happens per-request basis
+            self.trusted_proxy_networks = trusted_networks
             self.logger.info(
-                f"ProxyFix enabled: Trusting {num_proxies} proxy/proxies: {trusted_proxies}"
+                f"ProxyFix enabled: Trusting proxies from {len(trusted_networks)} network(s): "
+                f"{[str(net) for net in trusted_networks]}"
             )
+            # Use x_for=1 since we're validating proxies ourselves
             self.app.wsgi_app = ProxyFix(
-                self.app.wsgi_app, x_for=num_proxies, x_proto=1, x_host=1, x_port=1, x_prefix=1
+                self.app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1, x_prefix=1
             )
         else:
             # SECURITY: No ProxyFix by default - prevents header spoofing
-            # All requests will show the immediate connection IP (typically load balancer)
+            self.trusted_proxy_networks = []
             self.logger.warning(
                 "ProxyFix NOT enabled - X-Forwarded-* headers will be ignored. "
                 "If running behind a load balancer, IP-based features (filtering, stats) "
                 "will not work correctly. "
-                "Set TRUSTED_PROXIES environment variable (comma-separated proxy IPs) to enable "
-                "proxy support. Example: TRUSTED_PROXIES='10.0.0.1,10.0.0.2'"
+                "Set TRUSTED_PROXIES environment variable to enable proxy support. "
+                "Examples: TRUSTED_PROXIES='10.0.0.1' or TRUSTED_PROXIES='10.0.0.0/24,192.168.0.0/16'"
             )
 
     def _setup_gelf_handler(self) -> None:
