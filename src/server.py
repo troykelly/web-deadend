@@ -89,6 +89,9 @@ class Server:
         # Most web servers limit to 8KB, we allow 64KB to see long attack payloads
         self.max_url_length = int(os.getenv("MAX_URL_LENGTH", 65536))
 
+        # Shutdown tracking
+        self._shutdown_in_progress: bool = False
+
         self.logger = create_logger(self.app)
         self.request_counter: Counter[str] = Counter()
         # Use bounded deque instead of unbounded list to prevent memory exhaustion at scale
@@ -312,13 +315,24 @@ class Server:
         )
 
     def _setup_signal_handlers(self) -> None:
-        """Setup signal handlers for graceful shutdown."""
+        """Setup signal handlers for graceful shutdown.
+
+        Only register signal handlers when NOT running in test mode.
+        Tests need to manage their own lifecycle without signal interference.
+        """
+        # Skip signal handlers in test mode (TESTING env var or Flask TESTING config)
+        if os.getenv("TESTING") or self.app.config.get("TESTING"):
+            self.logger.debug("Skipping signal handlers in test mode")
+            return
+
         # Register shutdown handler for SIGTERM and SIGINT
         signal.signal(signal.SIGTERM, self._signal_handler)
         signal.signal(signal.SIGINT, self._signal_handler)
 
-        # Also register atexit handler as backup
-        atexit.register(self._graceful_shutdown)
+        # Also register atexit handler as backup (but only in production)
+        # In tests, atexit can interfere with test teardown
+        if not os.getenv("PYTEST_CURRENT_TEST"):
+            atexit.register(self._graceful_shutdown)
 
         self.logger.info("Signal handlers registered for graceful shutdown")
 
@@ -334,6 +348,11 @@ class Server:
 
     def _graceful_shutdown(self) -> None:
         """Gracefully shutdown background threads and flush queues."""
+        # Prevent multiple shutdown attempts
+        if hasattr(self, "_shutdown_in_progress") and self._shutdown_in_progress:
+            return
+        self._shutdown_in_progress = True
+
         self.logger.info("Starting graceful shutdown...")
 
         # Stop stats worker
@@ -391,7 +410,18 @@ class Server:
                 current_time = time.time()
 
                 # Check if stats changed or if it's time for heartbeat
-                stats_changed = current_stats != self.last_stats
+                # Exclude timestamp from comparison since it always changes
+                stats_without_timestamp = {
+                    k: v for k, v in current_stats.items() if k != "timestamp"
+                }
+                # Handle empty last_stats on first run
+                if self.last_stats:
+                    last_stats_without_timestamp = {
+                        k: v for k, v in self.last_stats.items() if k != "timestamp"
+                    }
+                    stats_changed = stats_without_timestamp != last_stats_without_timestamp
+                else:
+                    stats_changed = True  # First run, always log
                 heartbeat_due = (
                     current_time - self.last_heartbeat_time
                 ) >= self.log_heartbeat_interval
