@@ -11,6 +11,7 @@ freezegun==1.5.1
 # Code quality tools
 black==24.10.0          # Code formatter
 flake8==7.1.1           # Linter
+isort==5.13.2           # Import sorter
 mypy==1.14.1            # Type checker
 pre-commit==4.0.1       # Git hook framework
 types-PyYAML==6.0.12.20240917  # Type stubs for PyYAML
