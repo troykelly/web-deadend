@@ -158,6 +158,16 @@ class Server:
             proxy.strip() for proxy in trusted_proxies_str.split(",") if proxy.strip()
         ]
 
+        # Check for common misconfiguration: CIDR notation in TRUSTED_PROXIES
+        if trusted_proxies and any("/" in proxy for proxy in trusted_proxies):
+            self.logger.error(
+                f"Invalid TRUSTED_PROXIES configuration: {trusted_proxies_str}. "
+                "TRUSTED_PROXIES should be comma-separated IP addresses (e.g., '10.0.0.1,10.0.0.2'), "
+                "NOT CIDR ranges. To trust all proxies, use TRUST_ALL_PROXIES=true instead."
+            )
+            # Clear the list to prevent ProxyFix from being misconfigured
+            trusted_proxies = []
+
         if trust_all:
             # Trust all proxies by setting x_for to a high value
             self.logger.warning(
