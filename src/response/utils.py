@@ -146,18 +146,10 @@ def route_matches_url(route: str, url: str) -> Optional[Dict[str, str]]:
             return None
 
         try:
-            # Use regex module with built-in timeout (works properly with gevent/threading)
+            # Use regex module (no timeout support in this version)
+            # TODO: Implement timeout using signal or threading.Timer
             compiled = regex.compile(pattern)
-            if REGEX_MODULE == "regex":
-                # regex module supports native timeout parameter on match()
-                match = compiled.match(url, timeout=REGEX_TIMEOUT_SECONDS)
-            else:
-                # Fallback to standard re (no timeout protection)
-                logger.warning(
-                    "Using standard 're' module without timeout protection. "
-                    "Install 'regex' module for proper ReDoS prevention."
-                )
-                match = compiled.match(url)
+            match = compiled.match(url)
 
             if match:
                 return match.groupdict()
