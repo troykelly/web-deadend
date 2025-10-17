@@ -396,11 +396,11 @@ class Server:
             except Exception as e:
                 self.logger.error("Error queueing GELF data: %s", e)
 
-    def deadend_status(self) -> Response:
+    def deadend_status(self):
         """Endpoint to return service status."""
         return jsonify({"service": "ok"}), 200
 
-    def deadend_counter(self) -> Response:
+    def deadend_counter(self):
         """Endpoint to return request statistics."""
         top_domains = self.request_counter.most_common(10)
         request_breakdown = Counter(req["method"] for req in self.request_details)
