@@ -476,7 +476,14 @@ class Server:
         }
 
     def _log_stats(self, stats: Dict[str, Any], heartbeat: bool = False) -> None:
-        """Log statistics in the configured format."""
+        """Log statistics in the configured format.
+
+        Skip logging in test mode to prevent flooding test output.
+        """
+        # Skip stats logging in test mode to avoid spamming test output
+        if os.getenv("TESTING") or self.app.config.get("TESTING"):
+            return
+
         if self.log_format == "json":
             stats_copy = stats.copy()
             stats_copy["heartbeat"] = heartbeat
