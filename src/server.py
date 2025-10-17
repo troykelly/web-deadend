@@ -158,6 +158,12 @@ class Server:
         trust_all = bool(os.getenv("TRUST_ALL_PROXIES", "false").lower() in ["true", "1", "yes"])
         trusted_proxies_str = os.getenv("TRUSTED_PROXIES", "")
 
+        self.logger.info(
+            f"[PROXY_DEBUG] Starting proxy configuration: "
+            f"TRUST_ALL_PROXIES={os.getenv('TRUST_ALL_PROXIES', 'not set')}, "
+            f"TRUSTED_PROXIES={trusted_proxies_str or 'not set'}"
+        )
+
         # Parse CIDR ranges from TRUSTED_PROXIES
         trusted_networks = []
         if trusted_proxies_str:
@@ -173,22 +179,33 @@ class Server:
                             addr = ipaddress.ip_address(proxy)
                             if isinstance(addr, ipaddress.IPv4Address):
                                 proxy = f"{proxy}/32"
+                                self.logger.info(
+                                    f"[PROXY_DEBUG] Auto-appended /32 to IPv4: {proxy}"
+                                )
                             else:
                                 proxy = f"{proxy}/128"
+                                self.logger.info(
+                                    f"[PROXY_DEBUG] Auto-appended /128 to IPv6: {proxy}"
+                                )
                         except ValueError:
                             self.logger.error(f"Invalid IP address in TRUSTED_PROXIES: {proxy}")
                             continue
 
                     network = ipaddress.ip_network(proxy, strict=False)
                     trusted_networks.append(network)
+                    self.logger.info(f"[PROXY_DEBUG] Parsed network: {network}")
                 except ValueError as e:
                     self.logger.error(f"Invalid CIDR range in TRUSTED_PROXIES: {proxy} - {e}")
                     continue
 
+        self.logger.info(f"[PROXY_DEBUG] Total parsed networks: {len(trusted_networks)}")
+        if trusted_networks:
+            self.logger.info(f"[PROXY_DEBUG] Networks: {[str(net) for net in trusted_networks]}")
+
         # Check if trust-all ranges are present (0.0.0.0/0 or ::/0)
         if trusted_networks and any(str(net) in ["0.0.0.0/0", "::/0"] for net in trusted_networks):
             self.logger.info(
-                f"Detected trust-all CIDR ranges in TRUSTED_PROXIES ({trusted_proxies_str}). "
+                f"[PROXY_DEBUG] Detected trust-all CIDR ranges in TRUSTED_PROXIES ({trusted_proxies_str}). "
                 "Enabling trust-all proxy mode."
             )
             trust_all = True
@@ -196,12 +213,13 @@ class Server:
         if trust_all:
             # Trust all proxies by setting x_for to a high value
             self.logger.warning(
-                "TRUST_ALL_PROXIES enabled - Trusting up to 100 proxy hops. "
+                "[PROXY_DEBUG] TRUST_ALL_PROXIES enabled - Trusting up to 100 proxy hops. "
                 "This should ONLY be used when behind trusted infrastructure."
             )
             self.app.wsgi_app = ProxyFix(
                 self.app.wsgi_app, x_for=100, x_proto=1, x_host=1, x_port=1, x_prefix=1
             )
+            self.logger.info("[PROXY_DEBUG] ProxyFix middleware installed with x_for=100")
         elif trusted_networks:
             # Store trusted networks for validation and enable ProxyFix with depth 1
             # The actual validation happens per-request basis
