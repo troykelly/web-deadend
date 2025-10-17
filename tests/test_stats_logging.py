@@ -35,7 +35,13 @@ class TestStatsLogging:
         from src.server import Server
 
         server = Server()
-        assert server.log_format == "text"
+        try:
+            assert server.log_format == "text"
+        finally:
+            # Cleanup: stop stats worker if it exists
+            if server.stats_worker_thread:
+                server.stats_shutdown_event.set()
+                server.stats_worker_thread.join(timeout=2)
 
     @patch.dict("os.environ", {"LOG_FORMAT": "invalid"})
     def test_log_format_invalid_defaults_to_json(self):
@@ -53,7 +59,13 @@ class TestStatsLogging:
         from src.server import Server
 
         server = Server()
-        assert server.log_stats_interval == 30
+        try:
+            assert server.log_stats_interval == 30
+        finally:
+            # Cleanup: stop stats worker if it exists
+            if server.stats_worker_thread:
+                server.stats_shutdown_event.set()
+                server.stats_worker_thread.join(timeout=2)
 
     @patch.dict("os.environ", {}, clear=True)
     def test_custom_heartbeat_interval(self, monkeypatch):
@@ -63,7 +75,13 @@ class TestStatsLogging:
         from src.server import Server
 
         server = Server()
-        assert server.log_heartbeat_interval == 7200
+        try:
+            assert server.log_heartbeat_interval == 7200
+        finally:
+            # Cleanup: stop stats worker if it exists
+            if server.stats_worker_thread:
+                server.stats_shutdown_event.set()
+                server.stats_worker_thread.join(timeout=2)
 
     def test_calculate_stats_empty(self, app):
         """Test stats calculation with no requests."""
@@ -278,13 +296,18 @@ class TestStatsLogging:
 
         server = Server()
 
-        # Give the worker thread time to run once
-        time.sleep(1.5)
+        try:
+            # Give the worker thread time to run once
+            time.sleep(1.5)
 
-        # There should be at least one log entry
-        # Note: The first run might not log if stats haven't changed from empty
-        # So we just verify the thread is working
-        assert server.stats_worker_thread.is_alive()
+            # There should be at least one log entry
+            # Note: The first run might not log if stats haven't changed from empty
+            # So we just verify the thread is working
+            assert server.stats_worker_thread.is_alive()
+        finally:
+            # Cleanup: stop the stats worker thread
+            server.stats_shutdown_event.set()
+            server.stats_worker_thread.join(timeout=2)
 
     def test_stats_worker_shutdown(self, monkeypatch):
         """Test stats worker thread shutdown."""
