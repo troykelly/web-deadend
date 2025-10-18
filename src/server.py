@@ -322,22 +322,15 @@ class Server:
             self.gelf_queue = queue.Queue(maxsize=10000)
 
             # Start background worker thread for async GELF logging
-            # Use daemon=True in test mode to prevent pytest hanging
-            # PYTEST_CURRENT_TEST is always set by pytest, even in CI environments
-            is_testing = bool(
-                os.getenv("TESTING")
-                or self.app.config.get("TESTING")
-                or os.getenv("PYTEST_CURRENT_TEST")
-            )
+            # ALWAYS daemon=True - background loggers should never block shutdown
+            # Graceful shutdown is handled by sending None to queue in _graceful_shutdown()
             self.gelf_worker_thread = threading.Thread(
                 target=self._gelf_worker,
-                daemon=is_testing,  # Daemon in tests, non-daemon in production for graceful shutdown
+                daemon=True,
                 name="gelf-logger",
             )
             self.gelf_worker_thread.start()
-            self.logger.info(
-                f"Async GELF logging enabled with queue size 10000 (daemon={is_testing})"
-            )
+            self.logger.info("Async GELF logging enabled with queue size 10000 (daemon=True)")
         else:
             self.logger.warning("No GELF server specified; GELF handler not set up")
             self.gelf_logger = None
@@ -432,20 +425,15 @@ class Server:
             self.logger.warning(f"Invalid LOG_FORMAT '{self.log_format}', defaulting to 'json'")
             self.log_format = "json"
 
-        # Use daemon=True in test mode to prevent pytest hanging
-        # PYTEST_CURRENT_TEST is always set by pytest, even in CI environments
-        is_testing = bool(
-            os.getenv("TESTING")
-            or self.app.config.get("TESTING")
-            or os.getenv("PYTEST_CURRENT_TEST")
-        )
+        # ALWAYS daemon=True - background loggers should never block shutdown
+        # Graceful shutdown is handled by sending None to stats_queue in _graceful_shutdown()
         self.stats_worker_thread = threading.Thread(
-            target=self._stats_worker, daemon=is_testing, name="stats-logger"
+            target=self._stats_worker, daemon=True, name="stats-logger"
         )
         self.stats_worker_thread.start()
         self.logger.info(
             f"Stats logging enabled (format={self.log_format}, "
-            f"interval={self.log_stats_interval}s, heartbeat={self.log_heartbeat_interval}s)"
+            f"interval={self.log_stats_interval}s, heartbeat={self.log_heartbeat_interval}s, daemon=True)"
         )
 
     def _setup_signal_handlers(self) -> None:
@@ -464,9 +452,10 @@ class Server:
         signal.signal(signal.SIGINT, self._signal_handler)
 
         # Also register atexit handler as backup (but only in production)
-        # In tests, atexit can interfere with test teardown
-        if not os.getenv("PYTEST_CURRENT_TEST"):
-            atexit.register(self._graceful_shutdown)
+        # In tests, atexit can interfere with test teardown - daemon threads auto-terminate
+        # Don't register atexit in ANY test environment (TESTING, pytest, etc.)
+        # NOTE: We skip this entirely - atexit handlers cause 5s+ delays per test teardown
+        # since they call _graceful_shutdown() which waits for worker threads
 
         self.logger.info("Signal handlers registered for graceful shutdown")
 

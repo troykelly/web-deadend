@@ -20,13 +20,7 @@ def app(set_test_env):
         server.app.config["TESTING"] = True
         server.app.config["SERVER_INSTANCE"] = server  # Store server instance for tests
         yield server.app
-        # Cleanup: Stop any background threads
-        if hasattr(server, "stats_worker_thread") and server.stats_worker_thread:
-            server.stats_shutdown_event.set()
-            server.stats_worker_thread.join(timeout=2)
-        if hasattr(server, "gelf_worker_thread") and server.gelf_worker_thread:
-            server.gelf_queue.put(None)
-            server.gelf_worker_thread.join(timeout=2)
+        # No manual cleanup needed - worker threads are daemon=True and auto-terminate
 
 
 @pytest.fixture
