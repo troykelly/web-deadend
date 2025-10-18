@@ -323,7 +323,12 @@ class Server:
 
             # Start background worker thread for async GELF logging
             # Use daemon=True in test mode to prevent pytest hanging
-            is_testing = bool(os.getenv("TESTING") or self.app.config.get("TESTING"))
+            # PYTEST_CURRENT_TEST is always set by pytest, even in CI environments
+            is_testing = bool(
+                os.getenv("TESTING")
+                or self.app.config.get("TESTING")
+                or os.getenv("PYTEST_CURRENT_TEST")
+            )
             self.gelf_worker_thread = threading.Thread(
                 target=self._gelf_worker,
                 daemon=is_testing,  # Daemon in tests, non-daemon in production for graceful shutdown
@@ -428,7 +433,12 @@ class Server:
             self.log_format = "json"
 
         # Use daemon=True in test mode to prevent pytest hanging
-        is_testing = bool(os.getenv("TESTING") or self.app.config.get("TESTING"))
+        # PYTEST_CURRENT_TEST is always set by pytest, even in CI environments
+        is_testing = bool(
+            os.getenv("TESTING")
+            or self.app.config.get("TESTING")
+            or os.getenv("PYTEST_CURRENT_TEST")
+        )
         self.stats_worker_thread = threading.Thread(
             target=self._stats_worker, daemon=is_testing, name="stats-logger"
         )

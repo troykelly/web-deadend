@@ -46,8 +46,9 @@ class TestAsyncGELFSetup:
             # Worker thread should exist and be running
             assert server.gelf_worker_thread is not None
             assert isinstance(server.gelf_worker_thread, threading.Thread)
-            # Changed from daemon=True to daemon=False for graceful shutdown support
-            assert server.gelf_worker_thread.daemon is False
+            # In test mode (PYTEST_CURRENT_TEST set), thread is daemon=True to prevent hanging
+            # In production, thread is daemon=False for graceful shutdown support
+            assert server.gelf_worker_thread.daemon is True
             assert server.gelf_worker_thread.name == "gelf-logger"
             assert server.gelf_worker_thread.is_alive()
 
