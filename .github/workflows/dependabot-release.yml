@@ -48,7 +48,7 @@ jobs:
         echo "All tests passed successfully!"
 
     - name: Upload coverage report
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v5
       if: always()
       with:
         file: ./coverage.xml
